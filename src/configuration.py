@@ -1,6 +1,7 @@
 import json
 import re
-from requesthandler import *
+from requesthandler import get_html
+from constants import *
 
 class Configuration:
      CONFIG_PATH = "config.json"
@@ -34,12 +35,12 @@ class Configuration:
           subjects = find_subjects(cls.base_url, exam_page_links)
           config_json = {
                "base_url" : cls.base_url,
-               "exam_page_links" : exam_page_links, 
-               "subjects" : subjects,
                "download_folder" : cls.download_folder,
                "connect_timeout" : cls.connect_timeout,
                "read_timeout" : cls.read_timeout,
-               "max_page_cache" : cls.max_page_cache
+               "max_page_cache" : cls.max_page_cache,
+               "exam_page_links" : exam_page_links, 
+               "subjects" : subjects
           }
           cls.exam_page_links = exam_page_links
           cls.subjects = subjects
@@ -85,9 +86,10 @@ def find_subjects(url, link_extensions):
         links = html_page.find_all('a')
         for link in links:
             link_str = link.get("href")
-            # link_str = "a (7383)"
             match = subject_pattern.search(link_str)
             if (match):
                 subjects_map[match.group()] = link_str.strip("/")
             subjects_map_all_exams[key] = subjects_map
     return subjects_map_all_exams
+
+# def find_specimen_page(url): TODO FInd the specimen page in a prorgammatic way

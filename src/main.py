@@ -2,13 +2,9 @@ from easypapershell import *
 from configuration import Configuration
 import sys
 
-#TODO Have an argument length checker method that takes in the expected length, actual length and function name
-
 #TODO refresh the config if its been a while
-
-#TODO SPecimen papers "/Specimen Papers" 
-#TODO Also try papers that are in the root directory
-#Download bulk using get, e.g. get 0620_s17
+#TODO Download bulk using get, e.g. get 0620_s17
+#TODO Add tab completion
 
 if __name__ == '__main__':
     try:

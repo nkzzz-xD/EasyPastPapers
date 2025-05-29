@@ -6,12 +6,11 @@ from bs4 import FeatureNotFound
 import os
 import sys
 import time
-from configuration import Configuration
 
 download_file = None
 download_file_expected_size = 0
 
-def download_with_progress(url, download_folder, file_name):
+def download_with_progress(url, base_url, download_folder, file_name, log_errors = True):
     global download_file
     global download_file_expected_size
     download_file = download_folder + "/" + file_name
@@ -27,8 +26,16 @@ def download_with_progress(url, download_folder, file_name):
             progressed_bytes = 0
 
             os.makedirs(download_folder, exist_ok = True)
-            
-            #TODO If the file exists ask if they want to continue?
+            if os.path.exists(download_file):
+                user_response = None
+                while (not user_response) or user_response.lower() != "y" or user_response.lower() != "n":
+                    user_response = input(f"File at path '{download_file}' already exists. Do you want to overwrite this?\n[Y for yes and N for no]\n") #TODO Imporve the 
+                    if user_response.lower() == "n":
+                        print(f"Download of file '{download_file}' cancelled.")
+                        return True
+                    elif user_response.lower() == "y":
+                        break
+                
             #TODO Ad a flag to ignore files that already exist
             with open(download_file, 'wb') as f:
                 sys.stdout.write('\x1b[1A')  # Move cursor up
@@ -52,21 +59,26 @@ def download_with_progress(url, download_folder, file_name):
             download_file_expected_size = 0
             return True
     except ConnectionError as conn_err:
+        if not log_errors:
+            return
         sys.stdout.write('\x1b[2K')
-        print(f"❌{RED} Connection error while downloading {url}:{RESET} {str(conn_err)}\n{YELLOW}Make sure you are connected to the internet.{RESET}")
+        print(f"\r❌{RED} Connection error while downloading {url}:{RESET} {str(conn_err)}\n{YELLOW}Make sure you are connected to the internet.{RESET}")
         return False
     except HTTPError as http_err:
+        if not log_errors:
+            return
         sys.stdout.write('\x1b[2K')
-        print(f"❌{RED} HTTP error downloading:{RESET} {str(http_err)}\n{YELLOW}This paper might not be on {Configuration.base_url}{RESET}")
-        return False
-    except Exception as err:
-        sys.stdout.write('\x1b[2K')
-        print(f"❌{RED} Unexpected error occured while downloading:{RESET} {str(err)}")
+        print(f"\r❌{RED} HTTP error downloading:{RESET} {str(http_err)}\n{YELLOW}This paper might not be on {base_url}{RESET}")
         return False
     except (PermissionError, FileNotFoundError, OSError) as file_err:
         sys.stdout.write('\x1b[2K')
-        print(f"❌{RED} File system error:{RESET} {file_err}")
+        print(f"\r❌{RED} File system error:{RESET} {file_err}")
         return False 
+    except Exception as err:
+        sys.stdout.write('\x1b[2K')
+        print(f"\r❌{RED} Unexpected error occured while downloading:{RESET} {str(err)}")
+        return False
+    
     finally:
         delete_incomplete_download()
 

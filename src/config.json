@@ -1,5 +1,9 @@
 {
     "base_url": "https://papers.gceguide.cc",
+    "download_folder": "../Past_Papers",
+    "connect_timeout": 5,
+    "read_timeout": 15,
+    "max_page_cache": 20,
     "exam_page_links": {
         "alevel": "a-levels",
         "igcse": "cambridge-IGCSE",
@@ -248,6 +252,5 @@
             "3247": "urdu-first-language-(3247)",
             "3248": "urdu-second-language-(3248)"
         }
-    },
-    "download_folder": "../Past_Papers"
+    }
 }
