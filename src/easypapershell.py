@@ -171,13 +171,14 @@ def open_file(path):
     print("🧾 Opening after download...")
     try:
         if platform.system() == "Windows":
-            os.startfile(path)
+            os.startfile(os.path.abspath(path))
         elif platform.system() == "Darwin":
             os.system(f'open "{path}"')
         else:
             os.system(f'xdg-open "{path}"')
-    except Exception:
-        print("❌{RED} Could not open the file:{RESET} Try opening it manually with a PDF viewer.")
+    except Exception as e:
+        print(e)
+        print(f"❌{RED} Could not open the file: '{path}'{RESET}\nTry opening it manually with a PDF viewer.")
 
 def program_exit():
     print(f"{YELLOW}Exiting program...{RESET}")
