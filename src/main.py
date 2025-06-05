@@ -1,10 +1,31 @@
 from easypapershell import *
 from configuration import Configuration
 import sys
+# Only try to import readline if safe
+if sys.platform == "win32" and sys.version_info >= (3, 13):
+    import types
 
-#TODO refresh the config if its been a while
+    class FakeReadline:
+        backend = "fake"
+
+        def get_completer(self):
+            return None
+
+        def set_completer(self, completer):
+            pass
+
+        def parse_and_bind(self, string):
+            pass
+
+        def get_line_buffer(self):
+            return ""
+
+    sys.modules['readline'] = FakeReadline()
+    print("⚠️  Tab completion disabled (Windows + Python 3.13).") #Because of readline changes in Python 3.13, we cannot use readline for tab completion on Windows.
+
+
+#TODO Add commands to change config stuff.
 #TODO Add tab completion
-
 if __name__ == '__main__':
     try:
         print("Setting up...")

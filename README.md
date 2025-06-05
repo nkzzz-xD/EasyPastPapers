@@ -5,3 +5,4 @@ Required libaries:
 
 requests
 beautifulsoup4
+pyreadline3

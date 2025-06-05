@@ -1,0 +1,5 @@
+#TODO Find the specimen page in a programmatic way and remove all the hard coded "Specimen Papers" values.
+#TODO Find out why output seems to freeze at some point even when all files in folder are pre-downloaded
+#TODO Allow user to specify file extension
+#TODO Account for ms 1 + 2 + 3 + 4... cases
+#TODO Add progress bars for the downloads.

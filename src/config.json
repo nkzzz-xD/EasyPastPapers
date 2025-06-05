@@ -227,7 +227,7 @@
             "2055": "hinduism-(2055)",
             "2147": "history-(2147)",
             "2134": "history-(modern-world-affairs)-(2134)",
-            "1917": "history-world-affairs-1917â€“1991-(2158)",
+            "1917": "history-world-affairs-1917–1991-(2158)",
             "2056": "islamic-religion-&-culture-(2056)",
             "2068": "islamic-studies-(2068)",
             "2058": "islamiyat-(2058)",
@@ -252,5 +252,6 @@
             "3247": "urdu-first-language-(3247)",
             "3248": "urdu-second-language-(3248)"
         }
-    }
+    },
+    "last_updated": 1749128077.426511
 }

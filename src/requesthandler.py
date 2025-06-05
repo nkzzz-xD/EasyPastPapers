@@ -1,5 +1,6 @@
 import requests
 from constants import *
+from utils import print_error
 from requests.exceptions import HTTPError, ConnectionError
 from bs4 import BeautifulSoup
 from bs4 import FeatureNotFound
@@ -18,6 +19,26 @@ def download_with_progress(url, base_url, download_folder, file_name, force_down
     global download_file
     global download_file_expected_size
     download_file = download_folder + "/" + file_name
+    abs_download_path = os.path.abspath(download_file)
+    os.makedirs(download_folder, exist_ok = True)
+    if os.path.exists(download_file) and not force_download:
+        user_response = None
+        if force_download is not None: #This means force download was purposefully set to False
+            print(f"\r{YELLOW}File already exists at path '{abs_download_path}'; cancelling download. Use -f or --force to overwrite.{RESET}")
+            return FILE_EXISTS
+        while (not user_response) or user_response.lower() != "y" or user_response.lower() != "n":
+            print(f"\rFile at path {YELLOW}'{abs_download_path}'{RESET} already exists.")
+            user_response = input("\rDo you want to overwrite this? [Y for yes and N for no]: ")
+            if user_response.lower() == "n":
+                sys.stdout.write('\x1b[1A')
+                sys.stdout.write('\x1b[2K')
+                sys.stdout.write('\x1b[1A')
+                sys.stdout.write('\x1b[2K')
+                sys.stdout.flush()
+                print(f"\rDownload of file to {YELLOW}'{abs_download_path}'{RESET} cancelled as it already exists.")
+                return FILE_EXISTS
+            elif user_response.lower() == "y":
+                break
     try:
         with requests.get(url, stream = True, timeout = (CONNECT_TIMEOUT, READ_TIMEOUT)) as response:
             response.raise_for_status()
@@ -28,23 +49,10 @@ def download_with_progress(url, base_url, download_folder, file_name, force_down
             update_interval = 0.5 # Have an update interval so the download does not appear frozen on very slow connections.
             last_update_time = time.time()
             progressed_bytes = 0
-
-            os.makedirs(download_folder, exist_ok = True)
-            if os.path.exists(download_file) and not force_download:
-                user_response = None
-                if force_download is not None: #This means force download was purposefully set to False
-                    print(f"{YELLOW}File already exists at path '{download_file}'; cancelling download. Use -f or --force to overwrite.{RESET}")
-                    return FILE_EXISTS
-                while (not user_response) or user_response.lower() != "y" or user_response.lower() != "n":
-                    user_response = input(f"File at path '{download_file}' already exists. Do you want to overwrite this?\n[Y for yes and N for no]\n") #TODO Improve the message
-                    if user_response.lower() == "n":
-                        print(f"Download of file to {YELLOW}'{download_file}'{RESET} cancelled.")
-                        return FILE_EXISTS
-                    elif user_response.lower() == "y":
-                        break
                 
             with open(download_file, 'wb') as f:
                 sys.stdout.write('\x1b[1A')  # Move cursor up
+                sys.stdout.write('\x1b[2K')
                 for chunk in response.iter_content(chunk_size = chunk_size):
                     if chunk:
                         f.write(chunk)
@@ -59,7 +67,7 @@ def download_with_progress(url, base_url, download_folder, file_name, force_down
                             progressed_bytes = 0
                             last_update_time = now
             sys.stdout.write('\x1b[2K')  # Clear entire line 
-            sys.stdout.write(f"\r✅{GREEN} {file_name} saved to: {os.path.abspath(download_file)}{RESET}\n")
+            sys.stdout.write(f"\r✅{GREEN} {file_name} saved to: {abs_download_path}{RESET}\n")
             sys.stdout.flush()
             download_file = None
             download_file_expected_size = 0
@@ -68,21 +76,21 @@ def download_with_progress(url, base_url, download_folder, file_name, force_down
         if not log_errors:
             return FAILED_TO_DOWNLOAD
         sys.stdout.write('\x1b[2K')
-        print(f"\r❌{RED} Connection error while downloading {url}:{RESET} {str(conn_err)}\n{YELLOW}Make sure you are connected to the internet.{RESET}")
+        print_error(f"Connection error while downloading {YELLOW}{url}{RED}", f"\n{conn_err}\n{YELLOW}Make sure you are connected to the internet.{RESET}")
         return FAILED_TO_DOWNLOAD
     except HTTPError as http_err:
         if not log_errors:
             return FAILED_TO_DOWNLOAD
         sys.stdout.write('\x1b[2K')
-        print(f"\r❌{RED} HTTP error downloading:{RESET} {str(http_err)}\n{YELLOW}This paper might not be on {base_url}{RESET}")
+        print_error("HTTP error downloading", f"\n{http_err}\n{YELLOW}This paper might not be on {base_url}{RESET}")
         return FAILED_TO_DOWNLOAD
     except (PermissionError, FileNotFoundError, OSError) as file_err:
         sys.stdout.write('\x1b[2K')
-        print(f"\r❌{RED} File system error:{RESET} {file_err}")
+        print_error("File system error", f"\n{file_err}")
         return FAILED_TO_DOWNLOAD 
     except Exception as err:
         sys.stdout.write('\x1b[2K')
-        print(f"\r❌{RED} Unexpected error occured while downloading:{RESET} {str(err)}")
+        print_error("Unexpected error occured while downloading", f"\n{err}")
         return FAILED_TO_DOWNLOAD
     
     finally:
@@ -96,7 +104,7 @@ def delete_incomplete_download():
         os.remove(download_file)
     except Exception as cleanup_err:
         #Shouldn't ever really happen
-        print(f"{RED}Failed to clean up partial file:{RESET} {cleanup_err}")
+        print_error("Failed to clean up partial file", f"\n{cleanup_err}")
 
 def safe_get_response(url, print_output = True):
     try:
@@ -106,15 +114,15 @@ def safe_get_response(url, print_output = True):
     except ConnectionError as conn_err:
         if not print_output:
             return
-        print(f"{RED}Error connecting to {url}:{RESET} {str(conn_err)}\n{YELLOW}Make sure you are connected to the internet.{RESET}")
+        print_error(f"Error connecting to {url}", f"\n{conn_err}\n{YELLOW}Make sure you are connected to the internet.{RESET}")
     except HTTPError as http_err:
         if not print_output:
             return
-        print(f"{RED}HTTP error occured:{RESET} {str(http_err)}")
+        print_error("HTTP error occured", f"\n{http_err}")
     except Exception as err:
         if not print_output:
             return
-        print(f"{RED}Unexpected error occured:{RESET} {str(err)}")
+        print_error("Unexpected error occured", f"\n{err}")
     
 def get_response(url):
     response = safe_get_response(url)
@@ -132,11 +140,11 @@ def safe_get_html(url, print_output = True):
     except FeatureNotFound as parser_err:
         if not print_output:
             return
-        print(f"{RED}HTML parser not found:{RESET} {parser_err}")
+        print_error("HTML parser not found", f"\n{parser_err}")
     except Exception as err:
         if not print_output:
             return
-        print(f"{RED}Error while parsing HTML:{RESET} {err}")
+        print("Error while parsing HTML:", f"\n{err}")
 
 def get_html(url, print_output = True):
     html = safe_get_html(url, print_output)
@@ -144,5 +152,4 @@ def get_html(url, print_output = True):
         raise SystemExit(1)
     return html
 
-#TODO Modify error messages to use new print methods
 #TODO Add pydocs
