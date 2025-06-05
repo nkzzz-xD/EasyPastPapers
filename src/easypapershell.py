@@ -7,6 +7,8 @@ import os
 from utils import * 
 from cache import *
 import datetime
+import tkinter as tk
+from tkinter import filedialog, PhotoImage
 
 class EasyPaperShell(cmd.Cmd):
     
@@ -31,6 +33,7 @@ class EasyPaperShell(cmd.Cmd):
     SET_READ_TIMEOUT_USAGE = f"Usage: {YELLOW}setreadtimeout (seconds){RESET}"
     SET_BASE_URL_USAGE = f"Usage: {YELLOW}setbaseurl (base url){RESET}"
     SET_DOWNLOAD_FOLDER_USAGE = f"Usage: {YELLOW}setdownloadfolder (path to download folder){RESET}.\
+        \nIf no folder is specified, a dialog will open to choose a folder.\
         \nNote: The folder must already exist and must be written in quotation marks (\" \")."
 
     def __init__(self):
@@ -48,7 +51,9 @@ class EasyPaperShell(cmd.Cmd):
         \n-s / --skip-existing flag: skip downloading the file if it already exists in the download folder.\
         \n-ns / --no-session-folders flag: do not create session folders in the download folder.\
         \nDo NOT include the file extension."""
-        args = shlex.split(arg)
+        args = safe_shlex_split(arg)
+        if args == False:
+            return
         file_name = args[0] if args else None
         expected_flags = [("-o", "--open"),
                            ("-f", "--force"),
@@ -115,7 +120,9 @@ class EasyPaperShell(cmd.Cmd):
         \n                   Re-downloads files which already exist in the download folder.\
         \n-s / --skip-existing flag: skip downloading the files if they already exist in the download folder.\
         \n-ns / --no-session-folders flag: do not create session folders in the download folder."""
-        args = shlex.split(arg)
+        args = safe_shlex_split(arg)
+        if args == False:
+            return
         subject_code = args[0] if args else None
         range = args[1] if len(args) > 1 else None
         expected_flags = [ ("-f", "--force"),
@@ -271,14 +278,16 @@ class EasyPaperShell(cmd.Cmd):
 
     def do_setconnecttimeout(self, arg):
         """Set the connection timeout in seconds.\n{USAGE}"""
-        args = shlex.split(arg)
+        args = safe_shlex_split(arg)
+        if args == False:
+            return
         if len(args) < 1 or not args[0].isdigit():
             print_error("Please specify a valid number of seconds", None, EasyPaperShell.SET_CONNECT_TIMEOUT_USAGE)
             return
         if not check_args("setconnecttimeout", 1, args, usage_string=EasyPaperShell.SET_CONNECT_TIMEOUT_USAGE):
             return
         Configuration.connect_timeout = int(args[0])
-        Configuration.store_config()
+        Configuration.store_config(skip_reload=True)  # Skip reloading exam page links and subjects as they are not affected by this change
         print(f"Connection timeout set to {YELLOW}{Configuration.connect_timeout}{RESET} seconds.")
     
     def help_setconnecttimeout(self):
@@ -287,14 +296,16 @@ class EasyPaperShell(cmd.Cmd):
 
     def do_setreadtimeout(self, arg):
         """Set the read timeout in seconds.\n{USAGE}"""
-        args = shlex.split(arg)
+        args = safe_shlex_split(arg)
+        if args == False:
+            return
         if len(args) < 1 or not args[0].isdigit():
             print_error("Please specify a valid number of seconds", None, EasyPaperShell.SET_READ_TIMEOUT_USAGE)
             return
         if not check_args("setreadtimeout", 1, args, usage_string=EasyPaperShell.SET_READ_TIMEOUT_USAGE):
             return
         Configuration.read_timeout = int(args[0])
-        Configuration.store_config()
+        Configuration.store_config(skip_reload=True)
         print(f"Read timeout set to {YELLOW}{Configuration.read_timeout}{RESET} seconds.")
 
     def help_setreadtimeout(self):
@@ -303,14 +314,16 @@ class EasyPaperShell(cmd.Cmd):
 
     def do_setbaseurl(self, arg):
         """Set the base URL for the Easy Past Papers website.\n{USAGE}"""
-        args = shlex.split(arg)
+        args = safe_shlex_split(arg)
+        if args == False:
+            return
         if len(args) < 1 or not args[0].startswith("http"):
             print_error("Please specify a valid URL", None, EasyPaperShell.SET_BASE_URL_USAGE)
             return
         if not check_args("setbaseurl", 1, args, usage_string=EasyPaperShell.SET_BASE_URL_USAGE):
             return
         Configuration.base_url = args[0]
-        Configuration.store_config()
+        Configuration.store_config(skip_reload=True)
         print(f"Base URL set to {YELLOW}{Configuration.base_url}{RESET}.")
     
     def help_setbaseurl(self):
@@ -319,8 +332,19 @@ class EasyPaperShell(cmd.Cmd):
 
     def do_setdownloadfolder(self, arg):
         """Set the folder for Easy Past Papers to download files to.\n{USAGE}"""
-        args = shlex.split(arg)
-        if len(args) < 1 or (os.path.exists(args[0]) and not os.path.isdir(args[0])):
+        args = safe_shlex_split(arg)
+        if args == False:
+            return
+        if len(args) < 1:
+            selected_folder = choose_download_folder()
+            if selected_folder:
+                Configuration.download_folder = selected_folder
+                Configuration.store_config(skip_reload=True)
+                print(f"Download folder set to {YELLOW}{Configuration.download_folder}{RESET}.")
+            else:
+                print(f"{YELLOW}No folder selected. Download folder not changed.{RESET}")
+            return
+        if (os.path.exists(args[0]) and not os.path.isdir(args[0])):
             try:
                 os.makedirs(args[0], exist_ok = True)
             except Exception as e:
@@ -329,7 +353,7 @@ class EasyPaperShell(cmd.Cmd):
         if not check_args("setdownloadfolder", 1, args, usage_string=EasyPaperShell.SET_DOWNLOAD_FOLDER_USAGE):
             return
         Configuration.download_folder = args[0]
-        Configuration.store_config()
+        Configuration.store_config(skip_reload=True)
         print(f"Download folder set to {YELLOW}{Configuration.download_folder}{RESET}.")
 
     def help_setdownloadfolder(self):
@@ -342,6 +366,27 @@ class EasyPaperShell(cmd.Cmd):
     def do_exit(self, arg):
         """Exit the program."""
         program_exit()
+
+def choose_download_folder():
+    root = tk.Tk()
+    icon = PhotoImage(file="./assets/icon.png")
+    root.iconphoto(True, icon)
+    root.geometry("0x0+10000+10000")  # Move off-screen instantly
+    import ctypes
+    # Windows taskbar icon fix using ctypes
+    if os.name == 'nt':
+        try:
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(u'com.easypastpapers.python.app')
+            root.wm_iconbitmap("./assets/icon.ico")  # .ico file required for taskbar icon
+        except Exception as e:
+            print("Failed to set taskbar icon:", e)
+    
+    root.lift()
+    root.attributes('-topmost', True)
+    root.after_idle(root.attributes, '-topmost', False)  # Reset topmost after showing dialog
+    folder = filedialog.askdirectory(parent= root, title="Select Download Folder")
+    root.destroy()  # Close the hidden root window
+    return folder
 
 def check_args(function_name, expected_length, args, expected_flags=[], mutally_exclusive_flags=[], usage_string=None):
     arg_count = 0
@@ -383,6 +428,16 @@ def check_args(function_name, expected_length, args, expected_flags=[], mutally_
                             usage_string)
                 return False
     return True
+
+def safe_shlex_split(arg):
+    """Safely split the argument string using shlex.split, handling exceptions."""
+    # When unclosed brackets or quotes are present, shlex.split will raise a ValueError, so this function prevents the program from crashing.
+    try:
+        args = shlex.split(arg)
+        return args
+    except ValueError as e:
+        print_error("Invalid input", f"\n{e}{RESET}")
+        return False
 
 def download_paper(shell, file_name, open_after, force_download, session_folders):
     """Download a specific past paper based on the file name provided."""

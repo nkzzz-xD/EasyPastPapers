@@ -41,10 +41,15 @@ class Configuration:
             cls.store_config()
 
     @classmethod
-    def store_config(cls):
-        html_page = get_html(cls.base_url, (cls.connect_timeout, cls.read_timeout))
-        exam_page_links = find_link_extensions(html_page)
-        subjects = find_subjects(cls, cls.base_url, exam_page_links)
+    def store_config(cls, skip_reload = False):
+        # Sometimes we don't want to reload the exam page links and subjects, e.g. when changing the download folder.
+        if not skip_reload:
+            html_page = get_html(cls.base_url, (cls.connect_timeout, cls.read_timeout))
+            exam_page_links = find_link_extensions(html_page)
+            subjects = find_subjects(cls, cls.base_url, exam_page_links)
+        else:
+            exam_page_links = cls.exam_page_links
+            subjects = cls.subjects
         config_json = {
             "base_url" : cls.base_url,
             "download_folder" : cls.download_folder,
