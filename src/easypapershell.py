@@ -369,8 +369,11 @@ class EasyPaperShell(cmd.Cmd):
 
 def choose_download_folder():
     root = tk.Tk()
-    icon = PhotoImage(file="./assets/icon.png")
-    root.iconphoto(True, icon)
+    try:
+        icon = PhotoImage(file="./assets/icon.png")
+        root.iconphoto(True, icon)
+    except tk.TclError:
+        print_error("Failed to load icon. Ensure the icon file exists at './assets/icon.png'.", None, None, True)
     root.geometry("0x0+10000+10000")  # Move off-screen instantly
     import ctypes
     # Windows taskbar icon fix using ctypes

@@ -3,7 +3,7 @@ import platform
 from constants import YELLOW, RED, RESET
 
 def open_file(path):
-    print("🧾 Opening after download...")
+    print(f"🧾 Opening file at {path}...")
     try:
         if platform.system() == "Windows":
             os.startfile(os.path.abspath(path))
