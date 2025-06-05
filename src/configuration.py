@@ -4,6 +4,7 @@ from requesthandler import get_html
 from constants import *
 import time
 import sys
+from utils import print_error, program_exit
 
 class Configuration:
     CONFIG_PATH = "config.json"
@@ -41,9 +42,9 @@ class Configuration:
 
     @classmethod
     def store_config(cls):
-        html_page = get_html(cls.base_url)
+        html_page = get_html(cls.base_url, (cls.connect_timeout, cls.read_timeout))
         exam_page_links = find_link_extensions(html_page)
-        subjects = find_subjects(cls.base_url, exam_page_links)
+        subjects = find_subjects(cls, cls.base_url, exam_page_links)
         config_json = {
             "base_url" : cls.base_url,
             "download_folder" : cls.download_folder,
@@ -57,7 +58,7 @@ class Configuration:
         cls.exam_page_links = exam_page_links
         cls.subjects = subjects
         try:
-            with open(Configuration.CONFIG_PATH, "w") as f:
+            with open(cls.CONFIG_PATH, "w") as f:
                 json.dump(config_json, f, indent= 4, ensure_ascii = False)
         except OSError:
             print(f"{RED}Fatal: Could not save configuration file.{RESET}")
@@ -66,35 +67,29 @@ class Configuration:
 
 def find_link_extensions(html_page):
     link_extension_dict = {"alevel" : None, "igcse" : None  , "olevel" : None}
-
-    # In between a and level, match any non-word character (i.e., symbol — not letter/digit/underscore)
-    alevel_regex = r"a(?:[\W_]|%20)?level"
-    igcse_regex = r"(?:IGCSE|IG)"
-    olevel_regex = r"o(?:[\W_]|%20)?level"
-
-    alevel_pattern = re.compile(alevel_regex, re.IGNORECASE)
-    igcse_pattern = re.compile(igcse_regex, re.IGNORECASE)
-    olevel_pattern = re.compile(olevel_regex, re.IGNORECASE)
-
     links = html_page.find_all('a')
     for link in links:
         link_str = link.get('href')
-        if alevel_pattern.search(link_str):
+        if ALEVEL_PATTERN.search(link_str):
             #Must ensure there are no leading or trailing "/" characters to avoid any confusion.
             link_extension_dict["alevel"] = link_str.strip("/")
-        elif igcse_pattern.search(link_str):
+        elif IGCSE_PATTERN.search(link_str):
             link_extension_dict["igcse"] = link_str.strip("/")
-        elif olevel_pattern.search(link_str):
+        elif OLEVEL_PATTERN.search(link_str):
             link_extension_dict["olevel"] = link_str.strip("/")
+    # for key, value in link_extension_dict.items():
+    #     if value is None:
+    #         print_error(f"Could not find {key} exam links", f"\nMake sure you are connected to the internet and try again. Check the base url in the configuration is correct.")
+    #         program_exit()
     return link_extension_dict
 
-def find_subjects(url, link_extensions):
+def find_subjects(cls, url, link_extensions):
     subjects_map_all_exams = {} #Key is exam (igcse, o level or alevel), value is a dict of subject codes to the link to the subject page.
     for key, value in link_extensions.items():
         subjects_map = {}
         subject_regex = SUBJECT_CODE_REGEX
         subject_pattern = re.compile(subject_regex)
-        html_page = get_html(url + "/" + value)
+        html_page = get_html(url + "/" + (value if value else ""), (cls.connect_timeout, cls.read_timeout))
         links = html_page.find_all('a')
         for link in links:
             link_str = link.get("href")

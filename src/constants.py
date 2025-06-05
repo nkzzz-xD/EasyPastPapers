@@ -1,15 +1,38 @@
 import re
+from pathlib import Path
 RED = "\033[91m"
 YELLOW = "\033[93m"
 CYAN = "\033[36m"
 GREEN = "\033[92m"
 RESET = "\033[0m"
 BASE_URL = "https://papers.gceguide.cc"
-DOWNLOAD_FOLDER = "../Past_Papers"
+from pathlib import Path
+
+def get_default_download_folder():
+    try:
+        # Attempt to use the user's Downloads folder
+        downloads_path = Path.home() / "Downloads" / "Past_Papers"
+        downloads_path.mkdir(parents=True, exist_ok=True)  # Create it if it doesn't exist
+        return str(downloads_path)
+    except Exception as e:
+        print(f"Warning: Could not access Downloads folder: {e}")
+        return "../Past_Papers"
+
+DOWNLOAD_FOLDER = get_default_download_folder()
 CONNECT_TIMEOUT = 5
 READ_TIMEOUT = 15
 MAX_PAGE_CACHE = 20 #Maximum number of HTML Pages to be cached
 MAX_CONFIG_AGE = 60 * 60 * 24 * 28 # 1 month in seconds
+# --- For getting the link extensions and subjects
+# In between a and level, match any non-word character (i.e., symbol — not letter/digit/underscore)
+ALEVEL_REGEX = r"a(?:[\W_]|%20)?level"
+IGCSE_REGEX = r"(?:IGCSE|IG)"
+OLEVEL_REGEX = r"o(?:[\W_]|%20)?level"
+
+ALEVEL_PATTERN = re.compile(ALEVEL_REGEX, re.IGNORECASE)
+IGCSE_PATTERN = re.compile(IGCSE_REGEX, re.IGNORECASE)
+OLEVEL_PATTERN = re.compile(OLEVEL_REGEX, re.IGNORECASE)
+# ---
 SESSION_LETTERS = ["m", "s", "w", "y"] # m: Feb-March, s: May-June, w: Oct-Nov, y: Specimen
 NON_SPECIMEN_PAPER_TYPES = {"qp", "ms", "er", "gt", "sf", "in", "i2", "ci", "qr", "rp", "tn", "ir"}
 SPECIMEN_PAPER_TYPES = {"sc", "sci", "si" , "sm", "sp", "su", "sy"}

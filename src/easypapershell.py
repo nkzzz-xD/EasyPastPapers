@@ -1,4 +1,5 @@
 from requesthandler import *
+from configuration import Configuration
 import re
 import cmd
 import shlex
@@ -26,11 +27,16 @@ class EasyPaperShell(cmd.Cmd):
                      \n{YELLOW}(2 digit year code){RESET}-{YELLOW}(2 digit year code){RESET}"
     GET_MANY_EXAMPLE = f"Example: {YELLOW}getmany 0452 14-17{RESET}"
 
-    def __init__(self, config):
+    SET_CONNECT_TIMEOUT_USAGE = f"Usage: {YELLOW}setconnecttimeout (seconds){RESET}"
+    SET_READ_TIMEOUT_USAGE = f"Usage: {YELLOW}setreadtimeout (seconds){RESET}"
+    SET_BASE_URL_USAGE = f"Usage: {YELLOW}setbaseurl (base url){RESET}"
+    SET_DOWNLOAD_FOLDER_USAGE = f"Usage: {YELLOW}setdownloadfolder (path to download folder){RESET}.\
+        \nNote: The folder must already exist and must be written in quotation marks (\" \")."
+
+    def __init__(self):
         super().__init__()
-        self.config = config
         self.page_cache = PageCache() # Use this in order to enforce max size for cache pool
-        self.max_cache_size = config.max_page_cache
+        self.max_cache_size = Configuration.max_page_cache
     
     def do_get(self, arg):
         """Download a specific paper.\n{USAGE}\
@@ -65,6 +71,42 @@ class EasyPaperShell(cmd.Cmd):
         """Manually print the help text for 'get' with color support."""
         print(self.do_get.__doc__.format(YELLOW=YELLOW, RESET=RESET, USAGE=EasyPaperShell.GET_USAGE, PAPER_CODE_EXAMPLE=EasyPaperShell.PAPER_CODE_EXAMPLE))
 
+    def complete_get(self, text, line, begidx, endidx):
+        """Provide tab completion for the 'get' command."""
+        if not text:
+            return []
+        text = text.lower()
+        # Otherwise, we will provide suggestions for the file name.
+        if re.match(f"^{SUBJECT_CODE_REGEX}$", text):
+            return [f"{text}_"]
+        if re.match(f"^{SUBJECT_CODE_REGEX}_$", text):
+            return [f"{text}{session}" for session in SESSION_LETTERS]
+        if re.match(f"^{SUBJECT_CODE_REGEX}_[{SESSION_LETTERS_STRING}]$", text):
+            return [f"{text}{year:02d}" for year in range(0, datetime.datetime.now().year % 100 + 1)]
+        if re.match(f"^{SUBJECT_CODE_REGEX}_[{SESSION_LETTERS_STRING}]\\d{{2}}$", text):
+            return [f"{text}_"]
+        if re.match(f"^{SUBJECT_CODE_REGEX}_[{SESSION_LETTERS_STRING}]\\d{{2}}_$", text):
+            return [f"{text}{paper_type}" for paper_type in SPECIMEN_PAPER_TYPES.union(NON_SPECIMEN_PAPER_TYPES)]
+        paper_type = re.match(f"^{SUBJECT_CODE_REGEX}_[{SESSION_LETTERS_STRING}]\\d{{2}}_(.+)$", text)
+        if paper_type:
+            partial_paper_type = paper_type.group(2)
+            if partial_paper_type in (SPECIMEN_PAPER_TYPES.union(NON_SPECIMEN_PAPER_TYPES) - PAPER_TYPES_WITHOUT_PAPER_NUM):
+                return [f"{text}_"]
+            completions = [f"{text.rstrip(partial_paper_type)}{paper_type}" 
+               for paper_type in SPECIMEN_PAPER_TYPES.union(NON_SPECIMEN_PAPER_TYPES) 
+               if paper_type.startswith(partial_paper_type)]
+            return completions
+        # If the user has entered a file name, we will not provide any suggestions.
+        if PAST_PAPER_PATTERN.match(text):
+            return []
+        subject_code_suggestions = []
+        for subject_codes in Configuration.subjects.values():
+            for subject_code in subject_codes.keys():
+                if subject_code.startswith(text):
+                    subject_code_suggestions.append(f"{subject_code}")
+        return subject_code_suggestions
+
+
     def do_getmany(self, arg):
         """Download all past papers for a given range.\n{USAGE}\
         \n{GET_MANY_EXAMPLE} -o -f{RESET}\
@@ -81,10 +123,10 @@ class EasyPaperShell(cmd.Cmd):
                            ("-ns", "--no-session-folders")]
         args = [s.lower() for s in args]
         if not subject_code:
-            print_error("Please specify a subject code", "\n" + EasyPaperShell.GET_MANY_USAGE)
+            print_error("Please specify a subject code and range", "\n" + EasyPaperShell.GET_MANY_USAGE)
             return
         if not range:
-            print_error("Please specify a range", "\n" + EasyPaperShell.GET_MANY_USAGE)
+            print_error("Please specify both a range and subject code", "\n" + EasyPaperShell.GET_MANY_USAGE)
             return
         range = range.lower()
         if not check_args("getmany", 2, args, expected_flags, [(0,1)], EasyPaperShell.GET_MANY_USAGE):
@@ -145,7 +187,7 @@ class EasyPaperShell(cmd.Cmd):
             return
         subject_link = None
         subject_exam = None
-        for key, value in self.config.subjects.items():
+        for key, value in Configuration.subjects.items():
             if subject_code in value.keys():
                 subject_link = value[subject_code]
                 subject_exam = key
@@ -166,11 +208,11 @@ class EasyPaperShell(cmd.Cmd):
             print(f"\rPreparing for download of all past papers for {YELLOW}'{subject_code}'{RESET} in range {YELLOW}'{range}'{RESET}...")
             session = range[0]
             year = range[1:]
-            link_for_subject = self.config.base_url + "/" + self.config.exam_page_links[subject_exam] + "/" + self.config.subjects[subject_exam][subject_code]
+            link_for_subject = Configuration.base_url + "/" + Configuration.exam_page_links[subject_exam] + "/" + Configuration.subjects[subject_exam][subject_code]
             paper_year_on_site = "Specimen Papers" if session == "y" else "20" + year
             link_for_year = link_for_subject + "/" + paper_year_on_site
             session_folder = f"/{SESSION_MAP[session]}" if session_folders else ""
-            download_folder = f"{self.config.download_folder}/{self.config.subjects[subject_exam][subject_code]}/{paper_year_on_site}{session_folder}"
+            download_folder = f"{Configuration.download_folder}/{Configuration.subjects[subject_exam][subject_code]}/{paper_year_on_site}{session_folder}"
 
             # Get the key for retrieving the html page for the year from the cache.
             # If the session is specimen, we will use the session as the key, otherwise we will use the year.
@@ -182,10 +224,10 @@ class EasyPaperShell(cmd.Cmd):
             if cache_key in self.page_cache:
                 html_for_year = self.page_cache.get(cache_key) # Get the html from the cache if present.
             else:
-                html_for_year = safe_get_html(link_for_year, False)
+                html_for_year = safe_get_html(link_for_year, (Configuration.connect_timeout, Configuration.read_timeout), False)
                 if not html_for_year:
                     link_for_year = link_for_subject
-                    html_for_year = get_html(link_for_year, False if session == "y" else True)
+                    html_for_year = get_html(link_for_year, (Configuration.connect_timeout, Configuration.read_timeout), False if session == "y" else True)
                 # To add to the cache
                 self.page_cache[cache_key] = html_for_year
 
@@ -197,10 +239,12 @@ class EasyPaperShell(cmd.Cmd):
                 if (re.search(range, link_str)):
                     file_name = link_str.strip("/") # Get the file name from the link
                     content_response = download_with_progress(link_for_year + "/" + file_name, 
-                                                    self.config.base_url,
+                                                    Configuration.base_url,
                                                     download_folder,
                                                     file_name,
-                                                    force_download)
+                                                    force_download,
+                                                    (Configuration.connect_timeout, Configuration.read_timeout)
+                                                    )
                     if content_response == FILE_DOWNLOADED:
                         successful_downloads += 1
                         total_downloaded += 1
@@ -209,21 +253,88 @@ class EasyPaperShell(cmd.Cmd):
                         skipped += 1
                         total_skipped += 1
             if successful_downloads > 0:
-                print(f"✅{GREEN} Successfully downloaded {successful_downloads} past paper{'s' if successful_downloads > 1 else ''} for {YELLOW}'{self.config.subjects[subject_exam][subject_code]}'{GREEN} in session {YELLOW}'{range}'{GREEN} to {YELLOW}'{os.path.abspath(download_folder)}'{RESET}")
+                print(f"✅{GREEN} Successfully downloaded {successful_downloads} past paper{'s' if successful_downloads > 1 else ''} for {YELLOW}'{Configuration.subjects[subject_exam][subject_code]}'{GREEN} in session {YELLOW}'{range}'{GREEN} to {YELLOW}'{os.path.abspath(download_folder)}'{RESET}")
             elif skipped == 0:
                 sys.stdout.write('\x1b[1A')
                 sys.stdout.write('\x1b[2K')
                 sys.stdout.flush()
-                print_error(f"Could not find any past papers for {YELLOW}'{self.config.subjects[subject_exam][subject_code]}'{RED} in session {YELLOW}'{range}'{RESET}",
-                            f"\nMay not be available on {YELLOW}{self.config.base_url}{RESET} or the session code does not exist.\
+                print_error(f"Could not find any past papers for {YELLOW}'{Configuration.subjects[subject_exam][subject_code]}'{RED} in session {YELLOW}'{range}'{RESET}",
+                            f"\nMay not be available on {YELLOW}{Configuration.base_url}{RESET} or the session code does not exist.\
                             \nMake sure you have entered the correct subject code and session code.",
                             EasyPaperShell.GET_MANY_USAGE, True)
         if total_downloaded == 0 and total_skipped == 0:
-            print_error(f"No past papers could be downloaded for {YELLOW}'{self.config.subjects[subject_exam][subject_code]}'{RED} in the given session/range", None, None, True)
+            print_error(f"No past papers could be downloaded for {YELLOW}'{Configuration.subjects[subject_exam][subject_code]}'{RED} in the given session/range", None, None, True)
         
     def help_getmany(self):
         """Manually print the help text for 'getmany' with color support."""
         print(self.do_getmany.__doc__.format(YELLOW=YELLOW, RESET=RESET, USAGE=EasyPaperShell.GET_MANY_USAGE, GET_MANY_EXAMPLE = EasyPaperShell.GET_MANY_EXAMPLE))
+
+    def do_setconnecttimeout(self, arg):
+        """Set the connection timeout in seconds.\n{USAGE}"""
+        args = shlex.split(arg)
+        if len(args) < 1 or not args[0].isdigit():
+            print_error("Please specify a valid number of seconds", None, EasyPaperShell.SET_CONNECT_TIMEOUT_USAGE)
+            return
+        if not check_args("setconnecttimeout", 1, args, usage_string=EasyPaperShell.SET_CONNECT_TIMEOUT_USAGE):
+            return
+        Configuration.connect_timeout = int(args[0])
+        Configuration.store_config()
+        print(f"Connection timeout set to {YELLOW}{Configuration.connect_timeout}{RESET} seconds.")
+    
+    def help_setconnecttimeout(self):
+        """Manually print the help text for 'setconnecttimeout' with color support."""
+        print(self.do_setconnecttimeout.__doc__.format(YELLOW=YELLOW, RESET=RESET, USAGE = EasyPaperShell.SET_CONNECT_TIMEOUT_USAGE))
+
+    def do_setreadtimeout(self, arg):
+        """Set the read timeout in seconds.\n{USAGE}"""
+        args = shlex.split(arg)
+        if len(args) < 1 or not args[0].isdigit():
+            print_error("Please specify a valid number of seconds", None, EasyPaperShell.SET_READ_TIMEOUT_USAGE)
+            return
+        if not check_args("setreadtimeout", 1, args, usage_string=EasyPaperShell.SET_READ_TIMEOUT_USAGE):
+            return
+        Configuration.read_timeout = int(args[0])
+        Configuration.store_config()
+        print(f"Read timeout set to {YELLOW}{Configuration.read_timeout}{RESET} seconds.")
+
+    def help_setreadtimeout(self):
+        """Manually print the help text for 'setreadtimeout' with color support."""
+        print(self.do_setreadtimeout.__doc__.format(YELLOW=YELLOW, RESET=RESET, USAGE = EasyPaperShell.SET_READ_TIMEOUT_USAGE))
+
+    def do_setbaseurl(self, arg):
+        """Set the base URL for the Easy Past Papers website.\n{USAGE}"""
+        args = shlex.split(arg)
+        if len(args) < 1 or not args[0].startswith("http"):
+            print_error("Please specify a valid URL", None, EasyPaperShell.SET_BASE_URL_USAGE)
+            return
+        if not check_args("setbaseurl", 1, args, usage_string=EasyPaperShell.SET_BASE_URL_USAGE):
+            return
+        Configuration.base_url = args[0]
+        Configuration.store_config()
+        print(f"Base URL set to {YELLOW}{Configuration.base_url}{RESET}.")
+    
+    def help_setbaseurl(self):
+        """Manually print the help text for 'setbaseurl' with color support."""
+        print(self.do_setbaseurl.__doc__.format(YELLOW=YELLOW, RESET=RESET, USAGE = EasyPaperShell.SET_BASE_URL_USAGE))
+
+    def do_setdownloadfolder(self, arg):
+        """Set the folder for Easy Past Papers to download files to.\n{USAGE}"""
+        args = shlex.split(arg)
+        if len(args) < 1 or (os.path.exists(args[0]) and not os.path.isdir(args[0])):
+            try:
+                os.makedirs(args[0], exist_ok = True)
+            except Exception as e:
+                print_error("Please specify a valid directory path", None, EasyPaperShell.SET_DOWNLOAD_FOLDER_USAGE)
+                return
+        if not check_args("setdownloadfolder", 1, args, usage_string=EasyPaperShell.SET_DOWNLOAD_FOLDER_USAGE):
+            return
+        Configuration.download_folder = args[0]
+        Configuration.store_config()
+        print(f"Download folder set to {YELLOW}{Configuration.download_folder}{RESET}.")
+
+    def help_setdownloadfolder(self):
+        """Manually print the help text for 'setdownloadfolder' with color support."""
+        print(self.do_setdownloadfolder.__doc__.format(YELLOW=YELLOW, RESET=RESET, USAGE = EasyPaperShell.SET_DOWNLOAD_FOLDER_USAGE))
 
     def default(self, line):
         print_error(f"Unknown command: {YELLOW}'{line}'{RED}")
@@ -286,7 +397,7 @@ def download_paper(shell, file_name, open_after, force_download, session_folders
 
     subject_link = None
     subject_exam = None
-    for key, value in shell.config.subjects.items():
+    for key, value in Configuration.subjects.items():
         if subject_code in value.keys():
             subject_link = value[subject_code]
             subject_exam = key
@@ -331,18 +442,19 @@ def download_paper(shell, file_name, open_after, force_download, session_folders
     
     print(f"\rPreparing for download of {file_name}...")
 
-    link_for_subject = shell.config.base_url + "/" + shell.config.exam_page_links[subject_exam] + "/" + shell.config.subjects[subject_exam][subject_code]
+    link_for_subject = Configuration.base_url + "/" + Configuration.exam_page_links[subject_exam] + "/" + Configuration.subjects[subject_exam][subject_code]
     paper_year_on_site = "Specimen Papers" if session == "y" else "20" + year
     link_for_year = link_for_subject + "/" + paper_year_on_site
     pdf_link_prediction = link_for_year + "/" + file_name + ".pdf" # Most files will be pdfs so for efficiency we will try to download the pdf first
     session_folder = f"/{SESSION_MAP[session]}" if session_folders else ""
-    download_folder = f"{shell.config.download_folder}/{shell.config.subjects[subject_exam][subject_code]}/{paper_year_on_site}{session_folder}"
+    download_folder = f"{Configuration.download_folder}/{Configuration.subjects[subject_exam][subject_code]}/{paper_year_on_site}{session_folder}"
 
     content_response = download_with_progress(pdf_link_prediction, 
-                                                shell.config.base_url, #For error message purposes
+                                                Configuration.base_url, #For error message purposes
                                                 download_folder,
                                                 file_name + ".pdf",
                                                 force_download,
+                                                (Configuration.connect_timeout, Configuration.read_timeout),
                                                 False)
     if content_response != FAILED_TO_DOWNLOAD:
         if open_after:
@@ -359,10 +471,10 @@ def download_paper(shell, file_name, open_after, force_download, session_folders
     if cache_key in shell.page_cache:
         html_for_year = shell.page_cache.get(cache_key) # Get the html from the cache if present.
     else:
-        html_for_year = safe_get_html(link_for_year, False)
+        html_for_year = safe_get_html(link_for_year, (Configuration.connect_timeout, Configuration.read_timeout), False)
         if not html_for_year:
             link_for_year = link_for_subject
-            html_for_year = get_html(link_for_year)
+            html_for_year = get_html(link_for_year, (Configuration.connect_timeout, Configuration.read_timeout))
         # To add to the cache
         shell.page_cache[cache_key] = html_for_year
 
@@ -377,14 +489,15 @@ def download_paper(shell, file_name, open_after, force_download, session_folders
             found_file_name = link_str.strip("/")
             break
     if not found_file_name:
-        print_error(f"Could not find file {YELLOW}'{file_name}'{RED} on {YELLOW}'{shell.config.base_url}'{RESET}")
+        print_error(f"Could not find file {YELLOW}'{file_name}'{RED} on {YELLOW}'{Configuration.base_url}'{RESET}")
         return
     
     # If the file is found, we will download it.
     content_response = download_with_progress(link_for_year + "/" + found_file_name, 
-                                                shell.config.base_url,
+                                                Configuration.base_url,
                                                 download_folder,
                                                 file_name,
-                                                force_download)
+                                                force_download,
+                                                (Configuration.connect_timeout, Configuration.read_timeout))
     if content_response != FAILED_TO_DOWNLOAD and open_after:
         open_file(download_folder + "/"+ file_name)

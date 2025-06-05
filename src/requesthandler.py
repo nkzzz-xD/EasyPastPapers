@@ -15,7 +15,7 @@ FILE_DOWNLOADED = 0
 FAILED_TO_DOWNLOAD = 1
 FILE_EXISTS = 2
 
-def download_with_progress(url, base_url, download_folder, file_name, force_download, log_errors = True):
+def download_with_progress(url, base_url, download_folder, file_name, force_download, timeouts, log_errors = True):
     global download_file
     global download_file_expected_size
     download_file = download_folder + "/" + file_name
@@ -40,7 +40,7 @@ def download_with_progress(url, base_url, download_folder, file_name, force_down
             elif user_response.lower() == "y":
                 break
     try:
-        with requests.get(url, stream = True, timeout = (CONNECT_TIMEOUT, READ_TIMEOUT)) as response:
+        with requests.get(url, stream = True, timeout = timeouts) as response:
             response.raise_for_status()
             download_file_expected_size = int(response.headers.get('content-length', 0))
             chunk_size = 8192 # Read in 8KB chunks
@@ -106,9 +106,9 @@ def delete_incomplete_download():
         #Shouldn't ever really happen
         print_error("Failed to clean up partial file", f"\n{cleanup_err}")
 
-def safe_get_response(url, print_output = True):
+def safe_get_response(url, timeouts, print_output = True):
     try:
-        response = requests.get(url, timeout = (CONNECT_TIMEOUT, READ_TIMEOUT))
+        response = requests.get(url, timeout = timeouts)
         response.raise_for_status()
         return response
     except ConnectionError as conn_err:
@@ -124,15 +124,15 @@ def safe_get_response(url, print_output = True):
             return
         print_error("Unexpected error occured", f"\n{err}")
     
-def get_response(url):
-    response = safe_get_response(url)
+def get_response(url, timeouts, print_output = True):
+    response = safe_get_response(url, timeouts, print_output)
     if not response:
         raise SystemExit(1)
     return response
 
-def safe_get_html(url, print_output = True):
+def safe_get_html(url, timeouts, print_output = True):
     try:
-        response = safe_get_response(url, print_output)
+        response = safe_get_response(url, timeouts, print_output)
         if not response:
             return None
         response.encoding = "utf-8"
@@ -146,8 +146,8 @@ def safe_get_html(url, print_output = True):
             return
         print("Error while parsing HTML:", f"\n{err}")
 
-def get_html(url, print_output = True):
-    html = safe_get_html(url, print_output)
+def get_html(url, timeouts, print_output = True):
+    html = safe_get_html(url, timeouts, print_output)
     if not html:
         raise SystemExit(1)
     return html

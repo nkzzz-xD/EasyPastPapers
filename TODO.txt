@@ -3,3 +3,5 @@
 #TODO Allow user to specify file extension
 #TODO Account for ms 1 + 2 + 3 + 4... cases
 #TODO Add progress bars for the downloads.
+#TODO Command to get all the years available for a subject
+#TODO Improve tab completion for specifics
