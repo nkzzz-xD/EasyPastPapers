@@ -4,53 +4,245 @@ import cmd
 import shlex
 import os
 import platform
-from collections import OrderedDict
+from cache import *
+import datetime
 
-specimen_session = "y"
-non_specimen_paper_types = {"qp", "ms", "er", "gt", "sf", "in", "i2", "ci", "qr", "rp", "tn" "ir"}
+session_letters = ["m", "s", "w", "y"] # m: Feb-March, s: May-June, w: Oct-Nov, y: Specimen
+non_specimen_paper_types = {"qp", "ms", "er", "gt", "sf", "in", "i2", "ci", "qr", "rp", "tn", "ir"}
 specimen_paper_types = {"sc", "sci", "si" , "sm", "sp", "su", "sy"}
 # 0620_y20-21_su
 # 0580_y20-22_sy
 paper_types_without_paper_num = {"er", "gt", "sy", "su"}
 paper_types_with_2_years = {"sy", "su"} # can have 2 years but not mandatory
-past_paper_regex = rf"^(\d{{4}})_([msw{specimen_session}])(\d{{2}}|\d{{2}}-\d{{2}})_({"|".join(specimen_paper_types.union(non_specimen_paper_types))})(?:_(\d{{1,2}}[a-z]?))?$"
+subject_code_regex = r"\d{4}"
+session_regex = rf"([{"".join(session_letters)}])(\d{{2}}|\d{{2}}-\d{{2}})"
+past_paper_regex = rf"^({subject_code_regex})_{session_regex}_({"|".join(specimen_paper_types.union(non_specimen_paper_types))})(?:_(\d{{1,2}}[a-z]?))?$" #TODO Fix the regex. Stuff like paper 42l work
 past_paper_pattern = re.compile(past_paper_regex, re.IGNORECASE)
+session_map = {
+    "m" : "Feb-March",
+    "s" : "May-June",
+    "w" : "Oct-Nov",
+    "y" : "Specimen"
+}
 
 class EasyPaperShell(cmd.Cmd):
-
+    #TODO Account for ms 1 + 2 + 3 + 4... cases
     intro = "Welcome to Easy Past Papers. Type help or ? to list commands."
 
     prompt = f"{CYAN}Enter a command> {RESET}"
-    #TODO Make more consistent error message
+
+    GET_USAGE = f"Usage: {YELLOW}get (paper code) [-o/--open] [-f/--force] [-s/--skip-existing] [-ns/--no-session-folders]{RESET}"
+    PAPER_CODE_EXAMPLE = f"Paper code must be in the format: {YELLOW}(4-digit subject code){RESET}_{YELLOW}(session code)(2 digit year code){RESET}_{YELLOW}(paper type){RESET}_{YELLOW}(optional paper identifier){RESET}\
+        \nExample: {YELLOW}get 0452_w04_qp_3{RESET}"
+    
+    GET_MANY_USAGE = f"Usage: {YELLOW}getmany (subject code) (range) [-f/--force] [-s/--skip-existing] [-ns/--no-session-folders]{RESET}\
+                     \nRange can be a single session code, a range of years, or a combination of both.\
+                     \nRange can be in the format:\
+                     \n{YELLOW}(session letter)(2 digit year code){RESET}\
+                     \n{YELLOW}(session letter)(2 digit year code){RESET}-{YELLOW}(2 digit year code){RESET}\
+                     \n{YELLOW}(2 digit year code){RESET}-{YELLOW}(2 digit year code){RESET}"
+    GET_MANY_EXAMPLE = f"Example: {YELLOW}getmany 0452 14-17{RESET}"
+
     def __init__(self, config):
         super().__init__()
         self.config = config
-        self.page_cache = OrderedDict()  # Use this in order to enforce max size
+        self.page_cache = PageCache() # Use this in order to enforce max size for cache pool
         self.max_cache_size = config.max_page_cache
     
     def do_get(self, arg):
-        """Download a specific paper.\nUsage: get (paper code) [-o]\nExample: get 0452_w04_qp_3 -o
-        -o flag (optional): open file after download
-        Do NOT include the file extension."""
+        """Download a specific paper.\n{USAGE}\
+        \nNote: {PAPER_CODE_EXAMPLE} {YELLOW}-o -f{RESET}\
+        \nOptional flags:\
+        \n-o / --open flag: open file after download.\
+        \n-f / --force flag: download the file without asking for confirmation if it already exists.\
+        \n                   Re-downloads files which already exist in the download folder.\
+        \n-s / --skip-existing flag: skip downloading the file if it already exists in the download folder.\
+        \n-ns / --no-session-folders flag: do not create session folders in the download folder.\
+        \nDo NOT include the file extension.""" 
+        #TODO Allow user to specify file extension 
         args = shlex.split(arg)
         file_name = args[0] if args else None
+        expected_flags = [("-o", "--open"),
+                           ("-f", "--force"),
+                           ("-s", "--skip-existing"),
+                           ("-ns", "--no-session-folders")]
+        args = [s.lower() for s in args] # Make all args lowercase to avoid case sensitivity issues
         if not file_name:
-            print("❌ Please specify a file to download.\nUsage: get (paper code) [-o]")
+            print_error("Please specify a file to download", "\n" + EasyPaperShell.GET_USAGE)
             return
-        if not check_args("get", 1, args, {"o"}):
+        if not check_args("get", 1, args, expected_flags, [(1,2)], EasyPaperShell.GET_USAGE):
             return
-        open_after = '-o' in args
-        download_paper(self, file_name, open_after)
+        open_after = (expected_flags[0][0] in args) or (expected_flags[0][1] in args)
+        force_download = (expected_flags[1][0] in args) or (expected_flags[1][1] in args)
+        skip_existing =  (expected_flags[2][0] in args) or  (expected_flags[2][1] in args)
+        session_folders = not (expected_flags[3][0] in args or expected_flags[3][1] in args) # If the user specifies -ns or --no-session-folders, we will not create session folders
+        force_download = force_download if force_download else not skip_existing if skip_existing else None # If force_download is None, it means that the user did not specify any flags
+        download_paper(self, file_name, open_after, force_download, session_folders)
+
+    def help_get(self):
+        """Manually print the help text for 'get' with color support."""
+        print(self.do_get.__doc__.format(YELLOW=YELLOW, RESET=RESET, USAGE=EasyPaperShell.GET_USAGE, PAPER_CODE_EXAMPLE=EasyPaperShell.PAPER_CODE_EXAMPLE))
+
+    def do_getmany(self, arg):
+        """Download all past papers for a given range.\n{USAGE}\
+        \n{GET_MANY_EXAMPLE} -o -f{RESET}\
+        \nOptional flags:\
+        \n-f / --force flag: download the files without asking for confirmation if they already exist.\
+        \n                   Re-downloads files which already exist in the download folder.\
+        \n-s / --skip-existing flag: skip downloading the files if they already exist in the download folder.
+        \n-ns / --no-session-folders flag: do not create session folders in the download folder."""
+        args = shlex.split(arg)
+        subject_code = args[0] if args else None
+        range = args[1] if len(args) > 1 else None
+        expected_flags = [ ("-f", "--force"),
+                           ("-s", "--skip-existing"),
+                           ("-ns", "--no-session-folders")]
+        args = [s.lower() for s in args]
+        if not subject_code:
+            print_error("Please specify a subject code", "\n" + EasyPaperShell.GET_MANY_USAGE)
+            return
+        if not range:
+            print_error("Please specify a range", "\n" + EasyPaperShell.GET_MANY_USAGE)
+            return
+        range = range.lower()
+        if not check_args("getmany", 2, args, expected_flags, [(0,1)], EasyPaperShell.GET_MANY_USAGE):
+            return
+        if not re.match(f"^{subject_code_regex}$", subject_code):
+            print_error(f"Invalid subject code {YELLOW}'{subject_code}'{RED} as parameter to getrange",
+                        f"\nSubject code must be a 4 digit number.", 
+                        EasyPaperShell.GET_MANY_USAGE)
+            return
+        
+        single_session_range_match = re.match(r"^([msw])(\d{2})-(\d{2})$", range)
+        range_match = re.match(r"^(\d{2})-(\d{2})$", range)
+
+        # Determine sessions to download
+        sessions_to_download = []
+        current_year = datetime.datetime.now().year % 100
+
+        if single_session_range_match:
+            session, start_year, end_year = single_session_range_match.groups()
+            start_year = int(start_year)
+            end_year = int(end_year)
+            if end_year < start_year:
+                print_error("End year must be greater than or equal to start year", None, EasyPaperShell.GET_MANY_USAGE)
+                return
+            if 0 >= start_year or end_year > current_year:
+                print_error(f"Year {YELLOW}'{year}'{RED} is out of valid range {YELLOW}(1 to {current_year}){RESET}")
+                return
+            sessions_to_download = [f"{session}{year:02d}" for year in range(start_year, end_year + 1)]
+
+        elif range_match:
+            start_year, end_year = map(int, range_match.groups())
+            if end_year < start_year:
+                print_error("End year must be greater than or equal to start year", None, EasyPaperShell.GET_MANY_USAGE)
+                return
+            if 0 >= start_year or end_year > current_year:
+                print_error(f"Year {YELLOW}'{year}'{RED} is out of valid range {YELLOW}(1 to {current_year}){RESET}")
+                return
+            for year in range(start_year, end_year + 1):
+                for session in session_letters:
+                    sessions_to_download.append(f"{session}{year:02d}")
+
+        else:
+            match = re.match(rf"^([{"".join(session_letters)}])(\d{{2}})$", range)
+            if not match:
+                print_error(f"Invalid range {YELLOW}'{range}'{RED}", None, EasyPaperShell.GET_MANY_USAGE + "\n" + EasyPaperShell.GET_MANY_EXAMPLE)
+                return
+            sessions_to_download = [range]
+        
+        subject_link = None
+        subject_exam = None
+        for key, value in self.config.subjects.items():
+            if subject_code in value.keys():
+                subject_link = value[subject_code]
+                subject_exam = key
+                break
+            
+        if not subject_link:
+            print_error(f"Unknown subject code {YELLOW}'{subject_code}'{RESET}")
+            return
+        
+        force_download = (expected_flags[0][0] in args) or (expected_flags[0][1] in args)
+        skip_existing = (expected_flags[1][0] in args) or (expected_flags[1][1] in args)
+        session_folders = not (expected_flags[2][0] in args or expected_flags[2][1] in args) # If the user specifies -ns or --no-session-folders, we will not create session folders
+        force_download = force_download if force_download else not skip_existing if skip_existing else None # If force_download is None, it means that the user did not specify any flags
+        
+        total_downloaded = 0
+        total_skipped = 0
+        for range in sessions_to_download:
+            print(f"\rPreparing for download of all past papers for {YELLOW}'{subject_code}'{RESET} in range {YELLOW}'{range}'{RESET}...")
+            session = range[0]
+            year = range[1:]
+            link_for_subject = self.config.base_url + "/" + self.config.exam_page_links[subject_exam] + "/" + self.config.subjects[subject_exam][subject_code]
+            paper_year_on_site = "Specimen Papers" if session == "y" else "20" + year
+            link_for_year = link_for_subject + "/" + paper_year_on_site
+            download_folder = f"{self.config.download_folder}/{self.config.subjects[subject_exam][subject_code]}/{paper_year_on_site}{f"/{session_map[session]}" if session_folders else ""}"
+
+            # Get the key for retrieving the html page for the year from the cache.
+            # If the session is specimen, we will use the session as the key, otherwise we will use the year.
+            if session == "y":
+                cache_key = (subject_code, session)
+            else:
+                cache_key = (subject_code, year)
+
+            if cache_key in self.page_cache:
+                html_for_year = self.page_cache.get(cache_key) # Get the html from the cache if present.
+            else:
+                html_for_year = safe_get_html(link_for_year, False)
+                if not html_for_year:
+                    link_for_year = link_for_subject
+                    html_for_year = get_html(link_for_year, False if session == "y" else True)
+                # To add to the cache
+                self.page_cache[cache_key] = html_for_year
+
+            successful_downloads = 0
+            skipped = 0
+            links = html_for_year.find_all('a')
+            for link in links:
+                link_str = link.get('href')
+                if (re.search(range, link_str)):
+                    file_name = link_str.strip("/") # Get the file name from the link
+                    content_response = download_with_progress(link_for_year + "/" + file_name, 
+                                                    self.config.base_url,
+                                                    download_folder,
+                                                    file_name,
+                                                    force_download)
+                    if content_response == FILE_DOWNLOADED:
+                        successful_downloads += 1
+                        total_downloaded += 1
+                        print("\r")
+                    elif content_response == FILE_EXISTS:
+                        skipped += 1
+                        total_skipped += 1
+            if successful_downloads > 0:
+                print(f"✅{GREEN} Successfully downloaded {successful_downloads} past paper{'s' if successful_downloads > 1 else ''} for {YELLOW}'{self.config.subjects[subject_exam][subject_code]}'{GREEN} in session {YELLOW}'{range}'{GREEN} to {YELLOW}'{os.path.abspath(download_folder)}'{RESET}")
+            elif skipped == 0:
+                sys.stdout.write('\x1b[1A')
+                sys.stdout.write('\x1b[2K')
+                sys.stdout.flush()
+                print_error(f"\rCould not find any past papers for {YELLOW}'{self.config.subjects[subject_exam][subject_code]}'{RED} in session {YELLOW}'{range}'{RESET}",
+                            f"\nMay not be available on {YELLOW}{self.config.base_url}{RESET} or the session code does not exist.\
+                            \nMake sure you have entered the correct subject code and session code.",
+                            EasyPaperShell.GET_MANY_USAGE)
+        if total_downloaded == 0 and total_skipped == 0:
+            print_error(f"No past papers could be downloaded for {YELLOW}'{self.config.subjects[subject_exam][subject_code]}'{RED} in the given session/range")
+        
+    def help_getmany(self):
+        """Manually print the help text for 'getmany' with color support."""
+        print(self.do_getmany.__doc__.format(YELLOW=YELLOW, RESET=RESET, USAGE=EasyPaperShell.GET_MANY_USAGE))
 
     def default(self, line):
-        print(f"❌ Unknown command: '{line}'. Type 'help' to see available commands.")
+        print_error(f"Unknown command: {YELLOW}'{line}'{RED}")
 
     def do_exit(self, arg):
+        """Exit the program."""
         program_exit()
 
-def check_args(function_name, expected_length, args, expected_flags):
+def check_args(function_name, expected_length, args, expected_flags=[], mutally_exclusive_flags=[], usage_string=None):
     arg_count = 0
     invalid_flags = set({})
+    expected_flags_unpacked = [element for tuple_item in expected_flags for element in tuple_item]
     for arg in args:
         if not arg.startswith("-"):
             arg_count += 1
@@ -58,114 +250,142 @@ def check_args(function_name, expected_length, args, expected_flags):
         if len(arg) == 1:
             arg_count += 1
             continue
-        if arg[1:] not in expected_flags:
+        if arg not in expected_flags_unpacked:
             invalid_flags.add(arg)
+
     if arg_count != expected_length:
-        print(f"❌ {RED}Unexpected number of arguments passed to {YELLOW}{function_name}{RED} command.{RESET}\nExpected {YELLOW}{expected_length}{RESET} but was {YELLOW}{arg_count}{RESET}")
+        print_error(f"Unexpected number of (non-flag) arguments passed to {YELLOW}{function_name}{RED} command", 
+                    f"\nExpected {YELLOW}{expected_length}{RESET} but was {YELLOW}{arg_count}{RESET}",
+                    usage_string)
         return False
     if invalid_flags:
-        print(f"❌ {RED}Unexpected flag{"s" if len(invalid_flags) > 1 else ""} '{"', '".join(invalid_flags)}' encountered.{RESET}\n{YELLOW}{function_name}{RESET} command takes only '-{", '-".join(expected_flags)}' flag{"s" if len(expected_flags) > 1 else ""}")
+        print_error(f"Unexpected flag{"s" if len(invalid_flags) > 1 else ""} {YELLOW}'{f"'{RED}, {YELLOW}'".join(invalid_flags)}'{RED} encountered", 
+                    f"\n{YELLOW}{function_name}{RESET} command takes " +
+                    f"{f"only {YELLOW}'{f"'{RESET}, {YELLOW}'".join(expected_flags_unpacked)}'{RESET} flag{"s" if len(expected_flags) > 1 else ""}." if len(expected_flags_unpacked) > 0 else "no flags."}",
+                    usage_string)
         return False
+    if len(mutally_exclusive_flags) > 0:
+        for tuple_item in mutally_exclusive_flags:
+            comparison_flags = (expected_flags[tuple_item[0]], expected_flags[tuple_item[1]])
+            flag1 = comparison_flags[0][0] if comparison_flags[0][0] in args else comparison_flags[0][1] if comparison_flags[0][1] in args else None
+            flag2 = comparison_flags[1][0] if comparison_flags[1][0] in args else comparison_flags[1][1] if comparison_flags[1][1] in args else None
+            if flag1 and flag2:
+                print_error(f"Mutually exclusive flags {YELLOW}'{flag1}'{RED} and {YELLOW}'{flag2}'{RED} cannot be used together",
+                            None,
+                            usage_string)
+                return False
     return True
 
-def download_paper(shell, file_name, open_after):
-        match = past_paper_pattern.search(file_name)
-        if not match:
-            print(f"""❌ Invalid file '{file_name}' as parameter to get. Enter a valid file.\
-            \nExpected format: {YELLOW}(4-digit subject code){RESET}_{YELLOW}(session code)(2 digit year code){RESET}_{YELLOW}(paper type){RESET}_{YELLOW}(paper identifier){RESET}\
-            \nExample: {YELLOW}0606{RESET}_{YELLOW}s17{RESET}_{YELLOW}qp{RESET}_{YELLOW}22{RESET}""")
-            return
-        subject_code, session, year, paper_type, paper_num = match.groups()
-        session = session.lower()
-        paper_type = paper_type.lower()
+def download_paper(shell, file_name, open_after, force_download, session_folders):
+    """Download a specific past paper based on the file name provided."""
+    match = past_paper_pattern.search(file_name)
+    if not match:
+        print_error(f"Invalid file {YELLOW}'{file_name}'{RED} as parameter to get",
+        f"\nEnter a valid file name.\n{EasyPaperShell.PAPER_CODE_EXAMPLE}")
+        return
+    subject_code, session, year, paper_type, paper_num = match.groups()
+    session = session.lower()
+    paper_type = paper_type.lower()
 
-        subject_link = None
-        subject_exam = None
-        for key, value in shell.config.subjects.items():
-            if subject_code in value.keys():
-                subject_link = value[subject_code]
-                subject_exam = key
-                break
-            
-        if not subject_link:
-            print(f"❌ {RED}Unknown subject code '{subject_code}{RESET}'")
-            return
+    subject_link = None
+    subject_exam = None
+    for key, value in shell.config.subjects.items():
+        if subject_code in value.keys():
+            subject_link = value[subject_code]
+            subject_exam = key
+            break
         
-        if session == specimen_session and paper_type not in specimen_paper_types:
-            print(f"❌ Invalid file '{file_name}' as parameter to get. Specimen paper cannot have paper type '{paper_type}'.\nMust be one of '{"', ".join(specimen_paper_types)}'.\nEnter a valid file.")
-            return
-        
-        if session != specimen_session and paper_type in specimen_paper_types:
-            print(f"❌ Invalid file '{file_name}' as parameter to get. Non specimen paper cannot have paper type '{paper_type}'.\nMust be one of '{"', ".join(non_specimen_paper_types)}'.\nEnter a valid file.")
-            return
+    if not subject_link:
+        print_error(f"Unknown subject code {YELLOW}'{subject_code}'{RESET}")
+        return
+    
+    if session == "y" and paper_type not in specimen_paper_types:
+        print_error(f"Invalid file {YELLOW}'{file_name}'{RED} as parameter to get",
+                    f"\nSpecimen paper cannot have paper type {YELLOW}'{paper_type}'{RESET}\
+                    \nMust be one of {YELLOW}'{f"'{RESET}, {YELLOW}'".join(specimen_paper_types)}'{RESET}.\
+                    \nEnter a valid file.")
+        return
+    
+    if session != "y" and paper_type in specimen_paper_types:
+        print_error(f"Invalid file {YELLOW}'{file_name}'{RED} as parameter to get",
+                    f"\nNon specimen paper cannot have paper type {YELLOW}'{paper_type}'{RESET}\
+                    \nMust be one of {YELLOW}'{f"'{RESET}, {YELLOW}'".join(non_specimen_paper_types)}'{RESET}.\
+                    \nEnter a valid file.")
+        return
 
-        if paper_type not in paper_types_without_paper_num and not paper_num:
-            print(f"❌ Paper of type '{paper_type}' must have paper number.")
-            return
-        
-        if paper_type in paper_types_without_paper_num and paper_num:
-            print(f"❌ Paper of type '{paper_type}' must not have paper number.")
-            return
-        
-        if paper_type not in paper_types_with_2_years and re.search(r"\d{2}-\d{2}", year):
-            print(f"❌ Paper of type '{paper_type}' must not have a range of years. \nMust be one of '{"', ".join(paper_types_with_2_years)}'.")
-            return
-        
-        print("\rPreparing for download...")
+    if paper_type not in paper_types_without_paper_num and not paper_num:
+        print_error(f"Invalid file {YELLOW}'{file_name}'{RED} as parameter to get",
+                    f"\nPaper of type {YELLOW}'{paper_type}'{RESET} must have paper number.")
+        return
+    
+    if paper_type in paper_types_without_paper_num and paper_num:
+        print_error(f"Invalid file {YELLOW}'{file_name}'{RED} as parameter to get",
+                    f"\nPaper of type {YELLOW}'{paper_type}'{RESET} cannot have paper number.")
+        return
+    
+    if paper_type not in paper_types_with_2_years and re.search(r"\d{2}-\d{2}", year):
+        print(f"Invalid file {YELLOW}'{file_name}'{RED} as parameter to get",
+              f"\nPaper of type {YELLOW}'{paper_type}'{RESET} must not have a range of years.\
+                \nMust be one of {YELLOW}'{f"'{RESET}, {YELLOW}'".join(paper_types_with_2_years)}'{RESET}.")
+        return
+    
+    print(f"\rPreparing for download of {file_name}...")
 
-        link_for_subject = shell.config.base_url + "/" + shell.config.exam_page_links[subject_exam] + "/" + shell.config.subjects[subject_exam][subject_code]
-        paper_year_on_site = "Specimen Papers" if session == specimen_session else "20" + year #TODO Fix from being hard coded to "Specimen Papers"
-        link_for_year = link_for_subject + "/" + paper_year_on_site
-        pdf_link_prediction = link_for_year + "/" + file_name + ".pdf"
-        download_folder = shell.config.download_folder + "/" + shell.config.subjects[subject_exam][subject_code] + "/" + paper_year_on_site
-        content_response = download_with_progress(pdf_link_prediction, 
-                                                  shell.config.base_url,
-                                                  download_folder,
-                                                  file_name + ".pdf",
-                                                  False)
-        if content_response:
-            if open_after: 
-                open_file(download_folder + "/"+ file_name + ".pdf")
-            return
-        
+    link_for_subject = shell.config.base_url + "/" + shell.config.exam_page_links[subject_exam] + "/" + shell.config.subjects[subject_exam][subject_code]
+    paper_year_on_site = "Specimen Papers" if session == "y" else "20" + year #TODO Fix from being hard coded to "Specimen Papers"
+    link_for_year = link_for_subject + "/" + paper_year_on_site
+    pdf_link_prediction = link_for_year + "/" + file_name + ".pdf" # Most files will be pdfs so for efficiency we will try to download the pdf first
+    download_folder = f"{shell.config.download_folder}/{shell.config.subjects[subject_exam][subject_code]}/{paper_year_on_site}{f"/{session_map[session]}" if session_folders else ""}"
+
+    content_response = download_with_progress(pdf_link_prediction, 
+                                                shell.config.base_url, #For error message purposes
+                                                download_folder,
+                                                file_name + ".pdf",
+                                                force_download,
+                                                False)
+    if content_response != FAILED_TO_DOWNLOAD and open_after:
+        open_file(download_folder + "/"+ file_name + ".pdf")
+        return
+    
+    # Get the key for retrieving the html page for the year from the cache.
+    # If the session is specimen, we will use the session as the key, otherwise we will use the year.
+    if session == "y":
+        cache_key = (subject_code, session)
+    else:
+        cache_key = (subject_code, year)
+
+    if cache_key in shell.page_cache:
+        html_for_year = shell.page_cache.get(cache_key) # Get the html from the cache if present.
+    else:
+        html_for_year = safe_get_html(link_for_year, False)
+        if not html_for_year:
+            link_for_year = link_for_subject
+            html_for_year = get_html(link_for_year)
+        # To add to the cache
+        shell.page_cache[cache_key] = html_for_year
+
+    # Get the links for papers for that year.
+    links = html_for_year.find_all('a')
+    found_file_name = None
+    for link in links:
+        link_str = link.get('href')
         # now to find the file with the regex
-        if session == specimen_session:
-            cache_key = (subject_code, session)
-        else:
-            cache_key = (subject_code, year)
-        if cache_key in shell.page_cache:
-            html_for_year = shell.page_cache.get(cache_key)
-            shell.page_cache.move_to_end(cache_key)
-        else:
-            html_for_year = safe_get_html(link_for_year, True)
-            if not html_for_year:
-                link_for_year = link_for_subject
-                html_for_year = safe_get_html(link_for_year)
-
-            # To add to the cache
-            shell.page_cache[cache_key] = html_for_year
-            if len(shell.page_cache) > shell.max_cache_size:
-                shell.page_cache.popitem(last = False)
-
-        # Get the links for papers for that year.
-        links = html_for_year.find_all('a')
-        for link in links:
-            link_str = link.get('href')
-            if (re.search(file_name, link_str)):
-                # To get the link to the requested paper.
-                file_name = link_str.strip("/")
-                break
-
-        
-        content_response = download_with_progress(link_for_year + "/" + file_name, 
-                                                  shell.config.base_url,
-                                                  download_folder,
-                                                  file_name)
-        if not content_response:
-            return
-
-        if open_after: 
-            open_file(download_folder + "/"+ file_name)
+        if (re.search(file_name, link_str)):
+            # To get the link to the requested paper.
+            found_file_name = link_str.strip("/")
+            break
+    if not found_file_name:
+        print_error(f"Could not find file {YELLOW}'{file_name}'{RED} on {YELLOW}'{shell.config.base_url}'{RESET}")
+        return
+    
+    # If the file is found, we will download it.
+    content_response = download_with_progress(link_for_year + "/" + found_file_name, 
+                                                shell.config.base_url,
+                                                download_folder,
+                                                file_name,
+                                                force_download)
+    if content_response != FAILED_TO_DOWNLOAD and open_after:
+        open_file(download_folder + "/"+ file_name)
 
 def open_file(path):
     print("🧾 Opening after download...")
@@ -177,8 +397,13 @@ def open_file(path):
         else:
             os.system(f'xdg-open "{path}"')
     except Exception as e:
-        print(e)
-        print(f"❌{RED} Could not open the file: '{path}'{RESET}\nTry opening it manually with a PDF viewer.")
+        print_error(f"Could not open the file: {YELLOW}'{path}'{RESET}", f"Try opening it manually with a PDF viewer.\n{e}")
+
+def print_error(erorr_message, description=None, usage = None):
+    print(f"\r❌ {RED}{erorr_message}{f":{RESET}{description}" if description else f"{RESET}"}")
+    if usage:
+        print(f"{usage}")
+    print("Type 'help' to see available commands.")
 
 def program_exit():
     print(f"{YELLOW}Exiting program...{RESET}")

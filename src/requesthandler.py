@@ -10,7 +10,11 @@ import time
 download_file = None
 download_file_expected_size = 0
 
-def download_with_progress(url, base_url, download_folder, file_name, log_errors = True):
+FILE_DOWNLOADED = 0
+FAILED_TO_DOWNLOAD = 1
+FILE_EXISTS = 2
+
+def download_with_progress(url, base_url, download_folder, file_name, force_download, log_errors = True):
     global download_file
     global download_file_expected_size
     download_file = download_folder + "/" + file_name
@@ -21,22 +25,24 @@ def download_with_progress(url, base_url, download_folder, file_name, log_errors
             chunk_size = 8192 # Read in 8KB chunks
             downloaded = 0
             update_threshold = 64 * 1024 # Update the percentage every 64KB
-            update_interval = 0.5 # Have an update interval so the download does not appear frozen on very slow connections.\
+            update_interval = 0.5 # Have an update interval so the download does not appear frozen on very slow connections.
             last_update_time = time.time()
             progressed_bytes = 0
 
             os.makedirs(download_folder, exist_ok = True)
-            if os.path.exists(download_file):
+            if os.path.exists(download_file) and not force_download:
                 user_response = None
+                if force_download is not None: #This means force download was purposefully set to False
+                    print(f"{YELLOW}File already exists at path '{download_file}'; cancelling download. Use -f or --force to overwrite.{RESET}")
+                    return FILE_EXISTS
                 while (not user_response) or user_response.lower() != "y" or user_response.lower() != "n":
-                    user_response = input(f"File at path '{download_file}' already exists. Do you want to overwrite this?\n[Y for yes and N for no]\n") #TODO Imporve the 
+                    user_response = input(f"File at path '{download_file}' already exists. Do you want to overwrite this?\n[Y for yes and N for no]\n") #TODO Improve the message
                     if user_response.lower() == "n":
-                        print(f"Download of file '{download_file}' cancelled.")
-                        return True
+                        print(f"Download of file to {YELLOW}'{download_file}'{RESET} cancelled.")
+                        return FILE_EXISTS
                     elif user_response.lower() == "y":
                         break
                 
-            #TODO Ad a flag to ignore files that already exist
             with open(download_file, 'wb') as f:
                 sys.stdout.write('\x1b[1A')  # Move cursor up
                 for chunk in response.iter_content(chunk_size = chunk_size):
@@ -53,31 +59,31 @@ def download_with_progress(url, base_url, download_folder, file_name, log_errors
                             progressed_bytes = 0
                             last_update_time = now
             sys.stdout.write('\x1b[2K')  # Clear entire line 
-            sys.stdout.write(f"\r✅{GREEN} File saved to: {os.path.abspath(download_file)}{RESET}\n")
+            sys.stdout.write(f"\r✅{GREEN} {file_name} saved to: {os.path.abspath(download_file)}{RESET}\n")
             sys.stdout.flush()
             download_file = None
             download_file_expected_size = 0
-            return True
+            return FILE_DOWNLOADED
     except ConnectionError as conn_err:
         if not log_errors:
-            return
+            return FAILED_TO_DOWNLOAD
         sys.stdout.write('\x1b[2K')
         print(f"\r❌{RED} Connection error while downloading {url}:{RESET} {str(conn_err)}\n{YELLOW}Make sure you are connected to the internet.{RESET}")
-        return False
+        return FAILED_TO_DOWNLOAD
     except HTTPError as http_err:
         if not log_errors:
-            return
+            return FAILED_TO_DOWNLOAD
         sys.stdout.write('\x1b[2K')
         print(f"\r❌{RED} HTTP error downloading:{RESET} {str(http_err)}\n{YELLOW}This paper might not be on {base_url}{RESET}")
-        return False
+        return FAILED_TO_DOWNLOAD
     except (PermissionError, FileNotFoundError, OSError) as file_err:
         sys.stdout.write('\x1b[2K')
         print(f"\r❌{RED} File system error:{RESET} {file_err}")
-        return False 
+        return FAILED_TO_DOWNLOAD 
     except Exception as err:
         sys.stdout.write('\x1b[2K')
         print(f"\r❌{RED} Unexpected error occured while downloading:{RESET} {str(err)}")
-        return False
+        return FAILED_TO_DOWNLOAD
     
     finally:
         delete_incomplete_download()
@@ -132,8 +138,11 @@ def safe_get_html(url, print_output = True):
             return
         print(f"{RED}Error while parsing HTML:{RESET} {err}")
 
-def get_html(url):
-    html = safe_get_html(url)
+def get_html(url, print_output = True):
+    html = safe_get_html(url, print_output)
     if not html:
         raise SystemExit(1)
     return html
+
+#TODO Modify error messages to use new print methods
+#TODO Add pydocs

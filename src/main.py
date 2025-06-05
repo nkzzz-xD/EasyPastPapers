@@ -3,7 +3,6 @@ from configuration import Configuration
 import sys
 
 #TODO refresh the config if its been a while
-#TODO Download bulk using get, e.g. get 0620_s17
 #TODO Add tab completion
 
 if __name__ == '__main__':
