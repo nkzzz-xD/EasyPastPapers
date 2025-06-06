@@ -18,9 +18,10 @@ AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
+ArchitecturesInstallIn64BitMode=x64
 DefaultDirName={autopf}\EasyPastPapers
 DisableProgramGroupPage=yes
-InfoAfterFile=C:\Users\nanak\Documents\Nana_Kwame\Programming\EasyPastPapers\info_after.txt
+InfoAfterFile="C:\Users\nanak\Documents\Nana_Kwame\Programming\EasyPastPapers\setup scripts\info_after.txt"
 ; Uncomment the following line to run in non administrative install mode (install for current user only.)
 ;PrivilegesRequired=lowest
 OutputDir=C:\Users\nanak\Documents\Nana_Kwame\Programming\EasyPastPapers\releases
