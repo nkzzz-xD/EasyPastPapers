@@ -1,12 +1,13 @@
 import re
 from pathlib import Path
+import os
+import platform
 RED = "\033[91m"
 YELLOW = "\033[93m"
 CYAN = "\033[36m"
 GREEN = "\033[92m"
 RESET = "\033[0m"
 BASE_URL = "https://papers.gceguide.cc"
-from pathlib import Path
 
 def get_default_download_folder():
     try:
@@ -19,6 +20,16 @@ def get_default_download_folder():
         return "../Past_Papers"
 
 DOWNLOAD_FOLDER = get_default_download_folder()
+def get_config_path():
+    if platform.system() == "Windows":
+        appdata = os.getenv('APPDATA')  # or LOCALAPPDATA for local-only config
+        base = os.path.join(appdata, "EasyPastPapers")
+        os.makedirs(base, exist_ok=True)
+    else:
+        base = os.path.join(os.path.expanduser("~"), ".config")
+    return os.path.join(base, "config.json")
+CONFIG_PATH = get_config_path()
+    
 CONNECT_TIMEOUT = 5
 READ_TIMEOUT = 15
 MAX_PAGE_CACHE = 20 #Maximum number of HTML Pages to be cached

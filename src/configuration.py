@@ -7,7 +7,6 @@ import sys
 from utils import print_error, program_exit
 
 class Configuration:
-    CONFIG_PATH = "config.json"
     base_url = BASE_URL
     download_folder = DOWNLOAD_FOLDER
     connect_timeout = CONNECT_TIMEOUT
@@ -19,7 +18,7 @@ class Configuration:
     @classmethod
     def load_config(cls):
         try:
-            with open(Configuration.CONFIG_PATH, "r") as f:
+            with open(CONFIG_PATH, "r") as f:
                 obj = json.load(f)
                 cls.download_folder = obj.get("download_folder", DOWNLOAD_FOLDER)
                 cls.base_url = obj.get("base_url", BASE_URL)
@@ -63,10 +62,14 @@ class Configuration:
         cls.exam_page_links = exam_page_links
         cls.subjects = subjects
         try:
-            with open(cls.CONFIG_PATH, "w") as f:
+            with open(CONFIG_PATH, "w") as f:
                 json.dump(config_json, f, indent= 4, ensure_ascii = False)
         except OSError:
             print(f"{RED}Fatal: Could not save configuration file.{RESET}")
+            sys.stdout.flush()
+            import signal
+            signal.signal(signal.SIGINT, signal.SIG_IGN)
+            time.sleep(1)
             raise SystemExit(1)
         
 

@@ -1,6 +1,7 @@
 import os
 import platform
 from constants import YELLOW, RED, RESET
+import time
 
 def open_file(path):
     print(f"🧾 Opening file at {path}...")
@@ -24,4 +25,11 @@ def print_error(erorr_message, description=None, usage = None, disable_help=Fals
 
 def program_exit():
     print(f"{YELLOW}Exiting program...{RESET}", end="")
-    raise SystemExit(0)
+    import sys
+    sys.stdout.flush()
+    import signal
+    try:
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+        time.sleep(1)
+    finally:
+        raise SystemExit(0)
