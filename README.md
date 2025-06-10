@@ -6,8 +6,7 @@
 
 ---
 
-![EasyPastPapers Banner](assets/banner-placeholder.png)
-*<!-- Replace with an actual banner image if available -->*
+<!-- ![EasyPastPapers Banner](assets/banner-placeholder.png) -->
 
 ## Features
 
