@@ -1,22 +1,41 @@
 import json
 import re
+from typing import Optional, Dict, Any
 from requesthandler import get_html
 from constants import *
 import time
 import sys
-from utils import print_error, program_exit
 
 class Configuration:
-    base_url = BASE_URL
-    download_folder = DOWNLOAD_FOLDER
-    connect_timeout = CONNECT_TIMEOUT
-    read_timeout = READ_TIMEOUT
-    max_page_cache = MAX_PAGE_CACHE
-    exam_page_links = {}
-    subjects = {}
+    """
+    Handles loading and storing configuration for EasyPastPapers.
+
+    Attributes:
+        base_url (str): The base URL for downloading papers.
+        download_folder (str): The folder where papers are downloaded.
+        connect_timeout (int): Timeout for establishing network connections.
+        read_timeout (int): Timeout for reading data from network connections.
+        max_page_cache (int): Maximum number of HTML pages to cache.
+        exam_page_links (dict): Mapping of exam types to their page links.
+        subjects (dict): Mapping of exam types to their subjects.
+    """
+    base_url: str = BASE_URL
+    download_folder: str = DOWNLOAD_FOLDER
+    connect_timeout: int = CONNECT_TIMEOUT
+    read_timeout: int = READ_TIMEOUT
+    max_page_cache: int = MAX_PAGE_CACHE
+    exam_page_links: Dict[str, Optional[str]] = {}
+    subjects: Dict[str, Dict[str, str]] = {}
 
     @classmethod
-    def load_config(cls):
+    def load_config(cls) -> None:
+        """
+        Loads configuration from the config file. If the config file is missing or incomplete,
+        it regenerates and saves a new config file.
+
+        Raises:
+            SystemExit: If the configuration file cannot be saved.
+        """
         try:
             with open(CONFIG_PATH, "r") as f:
                 obj = json.load(f)
@@ -40,7 +59,15 @@ class Configuration:
             cls.store_config()
 
     @classmethod
-    def store_config(cls, skip_reload = False):
+    def store_config(cls, skip_reload: bool = False) -> None:
+        """
+        Stores the current configuration to the config file.
+
+        Args:
+            skip_reload (bool): If True, skips reloading exam page links and subjects.
+        Raises:
+            SystemExit: If the configuration file cannot be saved.
+        """
         # Sometimes we don't want to reload the exam page links and subjects, e.g. when changing the download folder.
         if not skip_reload:
             html_page = get_html(cls.base_url, (cls.connect_timeout, cls.read_timeout))
@@ -69,11 +96,20 @@ class Configuration:
             sys.stdout.flush()
             import signal
             signal.signal(signal.SIGINT, signal.SIG_IGN)
-            time.sleep(1)
+            time.sleep(1) # Allow time for the message to be seen (Can be removed if debugging)
             raise SystemExit(1)
         
 
-def find_link_extensions(html_page):
+def find_link_extensions(html_page: Any) -> Dict[str, Optional[str]]:
+    """
+    Finds the link extensions for each exam type from the HTML page.
+
+    Args:
+        html_page: BeautifulSoup object of the main page.
+
+    Returns:
+        dict: Mapping of exam types ('alevel', 'igcse', 'olevel') to their link extensions.
+    """
     link_extension_dict = {"alevel" : None, "igcse" : None  , "olevel" : None}
     links = html_page.find_all('a')
     for link in links:
@@ -85,16 +121,23 @@ def find_link_extensions(html_page):
             link_extension_dict["igcse"] = link_str.strip("/")
         elif OLEVEL_PATTERN.search(link_str):
             link_extension_dict["olevel"] = link_str.strip("/")
-    # for key, value in link_extension_dict.items():
-    #     if value is None:
-    #         print_error(f"Could not find {key} exam links", f"\nMake sure you are connected to the internet and try again. Check the base url in the configuration is correct.")
-    #         program_exit()
     return link_extension_dict
 
-def find_subjects(cls, url, link_extensions):
+def find_subjects(cls: Configuration, url: str, link_extensions: Dict[str, Optional[str]]) -> Dict[str, Dict[str, str]]:
+    """
+    Finds all subjects for each exam type.
+
+    Args:
+        cls: The Configuration class (for timeouts).
+        url (str): The base URL.
+        link_extensions (dict): Mapping of exam types to their link extensions.
+
+    Returns:
+        dict: Mapping of exam types to their subjects (subject code to subject page link).
+    """
     subjects_map_all_exams = {} #Key is exam (igcse, o level or alevel), value is a dict of subject codes to the link to the subject page.
     for key, value in link_extensions.items():
-        subjects_map = {}
+        subjects_map: Dict[str, str] = {}
         subject_regex = SUBJECT_CODE_REGEX
         subject_pattern = re.compile(subject_regex)
         html_page = get_html(url + "/" + (value if value else ""), (cls.connect_timeout, cls.read_timeout))
@@ -106,5 +149,3 @@ def find_subjects(cls, url, link_extensions):
                 subjects_map[match.group()] = link_str.strip("/")
             subjects_map_all_exams[key] = subjects_map
     return subjects_map_all_exams
-
-# def find_specimen_page(url):

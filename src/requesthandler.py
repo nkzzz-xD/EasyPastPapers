@@ -7,15 +7,39 @@ from bs4 import FeatureNotFound
 import os
 import sys
 import time
+from typing import Optional, Tuple
 
-download_file = None
-download_file_expected_size = 0
+download_file: Optional[str] = None
+download_file_expected_size: int = 0
 
-FILE_DOWNLOADED = 0
-FAILED_TO_DOWNLOAD = 1
-FILE_EXISTS = 2
+FILE_DOWNLOADED: int = 0
+FAILED_TO_DOWNLOAD: int = 1
+FILE_EXISTS: int = 2
 
-def download_with_progress(url, base_url, download_folder, file_name, force_download, timeouts, log_errors = True):
+def download_with_progress(
+    url: str,
+    base_url: str,
+    download_folder: str,
+    file_name: str,
+    force_download: Optional[bool],
+    timeouts: Tuple[int, int],
+    log_errors: bool = True
+ ) -> int:
+    """
+    Downloads a file from the given URL with progress indication.
+
+    Args:
+        url (str): The URL to download from.
+        base_url (str): The base URL (for error messages).
+        download_folder (str): The folder to save the file in.
+        file_name (str): The name of the file to save as.
+        force_download (Optional[bool]): Whether to overwrite existing files. None means prompt the user.
+        timeouts (Tuple[int, int]): (connect_timeout, read_timeout).
+        log_errors (bool): Whether to print errors.
+
+    Returns:
+        int: FILE_DOWNLOADED, FILE_EXISTS, or FAILED_TO_DOWNLOAD.
+    """
     global download_file
     global download_file_expected_size
     download_file = download_folder + "/" + file_name
@@ -96,17 +120,34 @@ def download_with_progress(url, base_url, download_folder, file_name, force_down
     finally:
         delete_incomplete_download()
 
-def delete_incomplete_download():
+def delete_incomplete_download() -> None:
+    """
+    Deletes an incomplete download file if the download did not finish.
+
+    Returns:
+        None
+    """
     # Check if download completed
     if (not download_file) or (not os.path.exists(download_file)) or os.path.getsize(download_file) >= download_file_expected_size:
         return
     try:
         os.remove(download_file)
     except Exception as cleanup_err:
-        #Shouldn't ever really happen
+        # Shouldn't ever really happen
         print_error("Failed to clean up partial file", f"\n{cleanup_err}")
 
-def safe_get_response(url, timeouts, print_output = True):
+def safe_get_response(url: str, timeouts: Tuple[int, int], print_output: bool = True) -> Optional[requests.Response]:
+    """
+    Safely gets a response from a URL, handling exceptions.
+
+    Args:
+        url (str): The URL to request.
+        timeouts (Tuple[int, int]): (connect_timeout, read_timeout).
+        print_output (bool): Whether to print errors.
+
+    Returns:
+        Optional[requests.Response]: The response object, or None if failed.
+    """
     try:
         response = requests.get(url, timeout = timeouts)
         response.raise_for_status()
@@ -124,13 +165,38 @@ def safe_get_response(url, timeouts, print_output = True):
             return
         print_error("Unexpected error occured", f"\n{err}")
     
-def get_response(url, timeouts, print_output = True):
+def get_response(url: str, timeouts: Tuple[int, int], print_output: bool = True) -> requests.Response:
+    """
+    Gets a response from a URL or exits if it fails.
+
+    Args:
+        url (str): The URL to request.
+        timeouts (Tuple[int, int]): (connect_timeout, read_timeout).
+        print_output (bool): Whether to print errors.
+
+    Returns:
+        requests.Response: The response object.
+
+    Raises:
+        SystemExit: If the request fails.
+    """
     response = safe_get_response(url, timeouts, print_output)
     if not response:
         raise SystemExit(1)
     return response
 
-def safe_get_html(url, timeouts, print_output = True):
+def safe_get_html(url: str, timeouts: Tuple[int, int], print_output: bool = True) -> Optional[BeautifulSoup]:
+    """
+    Safely gets and parses HTML from a URL.
+
+    Args:
+        url (str): The URL to request.
+        timeouts (Tuple[int, int]): (connect_timeout, read_timeout).
+        print_output (bool): Whether to print errors.
+
+    Returns:
+        Optional[BeautifulSoup]: The parsed HTML, or None if failed.
+    """
     try:
         response = safe_get_response(url, timeouts, print_output)
         if not response:
@@ -146,10 +212,22 @@ def safe_get_html(url, timeouts, print_output = True):
             return
         print("Error while parsing HTML:", f"\n{err}")
 
-def get_html(url, timeouts, print_output = True):
+def get_html(url: str, timeouts: Tuple[int, int], print_output: bool = True) -> BeautifulSoup:
+    """
+    Gets and parses HTML from a URL or exits if it fails.
+
+    Args:
+        url (str): The URL to request.
+        timeouts (Tuple[int, int]): (connect_timeout, read_timeout).
+        print_output (bool): Whether to print errors.
+
+    Returns:
+        BeautifulSoup: The parsed HTML.
+
+    Raises:
+        SystemExit: If the request fails.
+    """
     html = safe_get_html(url, timeouts, print_output)
     if not html:
         raise SystemExit(1)
     return html
-
-#TODO Add pydocs

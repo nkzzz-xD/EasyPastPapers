@@ -175,3 +175,5 @@ cython_debug/
 
 /papers
 /Past_Papers
+# Builds of the project
+/releases

@@ -5,3 +5,4 @@
 #TODO Add progress bars for the downloads.
 #TODO Command to get all the years available for a subject
 #TODO Improve tab completion for specifics
+#TODO Add a feature to merge all the pdfs downloaded into one

@@ -1,6 +1,6 @@
 {
     "base_url": "https://papers.gceguide.cc",
-    "download_folder": "C:\\Users\\nanak\\Downloads\\Past_Papers",
+    "download_folder": "../Past_Papers",
     "connect_timeout": 5,
     "read_timeout": 15,
     "max_page_cache": 20,
@@ -227,7 +227,7 @@
             "2055": "hinduism-(2055)",
             "2147": "history-(2147)",
             "2134": "history-(modern-world-affairs)-(2134)",
-            "1917": "history-world-affairs-1917–1991-(2158)",
+            "1917": "history-world-affairs-1917ï¿½1991-(2158)",
             "2056": "islamic-religion-&-culture-(2056)",
             "2068": "islamic-studies-(2068)",
             "2058": "islamiyat-(2058)",

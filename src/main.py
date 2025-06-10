@@ -1,12 +1,14 @@
 from easypapershell import *
 from configuration import Configuration
 import sys
-try:
-    import readline
-except ImportError:
-    import pyreadline3 as readline
 
-if __name__ == '__main__':
+def main() -> None:
+    """
+    Entry point for the Easy Past Papers CLI application.
+
+    Sets up the environment, loads configuration, and starts the command loop.
+    Handles keyboard interrupts and ensures incomplete downloads are cleaned up.
+    """
     try:
         print("Setting up...")
         Configuration.load_config()
@@ -20,3 +22,10 @@ if __name__ == '__main__':
         program_exit()
     finally:
         delete_incomplete_download()
+
+if __name__ == '__main__':
+    try:
+        import readline
+    except ImportError:
+        import pyreadline3 as readline
+    main()

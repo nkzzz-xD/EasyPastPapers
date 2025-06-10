@@ -9,39 +9,66 @@ from cache import *
 import datetime
 import tkinter as tk
 from tkinter import filedialog, PhotoImage
+from typing import Any, List, Optional
 
 class EasyPaperShell(cmd.Cmd):
+    """
+    Command-line shell for interacting with Easy Past Papers.
+
+    Provides commands for downloading papers, setting configuration, and more.
+    """
+
+    intro: str = "Welcome to Easy Past Papers. Type help or ? to list commands."
+    prompt: str = f"{CYAN}Enter a command> {RESET}"
+    doc_header: str = f"Documented commands (type 'help {YELLOW}command{RESET}'):"
+
+    GET_USAGE: str = f"Usage: {YELLOW}get (paper code) [-o/--open] [-f/--force] [-s/--skip-existing] [-ns/--no-session-folders]{RESET}"
+    PAPER_CODE_EXAMPLE: str = (
+        f"Paper code must be in the format: {YELLOW}(4-digit subject code){RESET}_{YELLOW}(session code)(2 digit year code){RESET}_{YELLOW}(paper type){RESET}_{YELLOW}(optional paper identifier){RESET}\n"
+        f"Paper identifier can be a 1 or 2 digit number or a digit followed by a letter.\n"
+        f"Example: {YELLOW}get 0452_w04_qp_3{RESET}"
+    )
     
-    intro = "Welcome to Easy Past Papers. Type help or ? to list commands."
+    GET_MANY_USAGE: str = (
+        f"Usage: {YELLOW}getmany (subject code) (range) [-f/--force] [-s/--skip-existing] [-ns/--no-session-folders]{RESET}\n"
+        f"Range can be a single session code, a range of years, or a combination of both.\n"
+        f"Range can be in the format:\n"
+        f"{YELLOW}(session letter)(2 digit year code){RESET}\n"
+        f"{YELLOW}(session letter)(2 digit year code){RESET}-{YELLOW}(2 digit year code){RESET}\n"
+        f"{YELLOW}(2 digit year code){RESET}-{YELLOW}(2 digit year code){RESET}"
+    )
+    GET_MANY_EXAMPLE: str = f"Example: {YELLOW}getmany 0452 14-17{RESET}"
 
-    prompt = f"{CYAN}Enter a command> {RESET}"
+    SET_CONNECT_TIMEOUT_USAGE: str = f"Usage: {YELLOW}setconnecttimeout (seconds){RESET}"
+    SET_READ_TIMEOUT_USAGE: str = f"Usage: {YELLOW}setreadtimeout (seconds){RESET}"
+    SET_BASE_URL_USAGE: str = f"Usage: {YELLOW}setbaseurl (base url){RESET}"
+    SET_DOWNLOAD_FOLDER_USAGE: str = (
+        f"Usage: {YELLOW}setdownloadfolder (path to download folder){RESET}.\n"
+        f"If no folder is specified, a dialog will open to choose a folder.\n"
+        f"Note: The folder must already exist and must be written in quotation marks (\" \")."
+    )
 
-    GET_USAGE = f"Usage: {YELLOW}get (paper code) [-o/--open] [-f/--force] [-s/--skip-existing] [-ns/--no-session-folders]{RESET}"
-    PAPER_CODE_EXAMPLE = f"Paper code must be in the format: {YELLOW}(4-digit subject code){RESET}_{YELLOW}(session code)(2 digit year code){RESET}_{YELLOW}(paper type){RESET}_{YELLOW}(optional paper identifier){RESET}\
-        \nPaper identifier can be a 1 or 2 digit number or a digit followed by a letter.\
-        \nExample: {YELLOW}get 0452_w04_qp_3{RESET}"
-    
-    GET_MANY_USAGE = f"Usage: {YELLOW}getmany (subject code) (range) [-f/--force] [-s/--skip-existing] [-ns/--no-session-folders]{RESET}\
-                     \nRange can be a single session code, a range of years, or a combination of both.\
-                     \nRange can be in the format:\
-                     \n{YELLOW}(session letter)(2 digit year code){RESET}\
-                     \n{YELLOW}(session letter)(2 digit year code){RESET}-{YELLOW}(2 digit year code){RESET}\
-                     \n{YELLOW}(2 digit year code){RESET}-{YELLOW}(2 digit year code){RESET}"
-    GET_MANY_EXAMPLE = f"Example: {YELLOW}getmany 0452 14-17{RESET}"
-
-    SET_CONNECT_TIMEOUT_USAGE = f"Usage: {YELLOW}setconnecttimeout (seconds){RESET}"
-    SET_READ_TIMEOUT_USAGE = f"Usage: {YELLOW}setreadtimeout (seconds){RESET}"
-    SET_BASE_URL_USAGE = f"Usage: {YELLOW}setbaseurl (base url){RESET}"
-    SET_DOWNLOAD_FOLDER_USAGE = f"Usage: {YELLOW}setdownloadfolder (path to download folder){RESET}.\
-        \nIf no folder is specified, a dialog will open to choose a folder.\
-        \nNote: The folder must already exist and must be written in quotation marks (\" \")."
-
-    def __init__(self):
+    def __init__(self) -> None:
+        """
+        Initialize the EasyPaperShell.
+        """
         super().__init__()
         self.page_cache = PageCache() # Use this in order to enforce max size for cache pool
         self.max_cache_size = Configuration.max_page_cache
     
-    def do_get(self, arg):
+    def do_help(self, arg: str) -> None:
+        """
+        List available commands with 'help' or detailed help with 'help command'.
+
+        Args:
+            arg (str): The command to get help for.
+        """
+        super().do_help(arg)
+        if not arg.strip():
+            print(f"{YELLOW}Example:{RESET} 'help get'")
+            print(f"For more info, visit https://github.com/nkzzz-xD/EasyPastPapers.")
+
+    def do_get(self, arg: str) -> None:
         """Download a specific paper.\n{USAGE}\
         \nNote: {PAPER_CODE_EXAMPLE} {YELLOW}-o -f{RESET}\
         \nOptional flags:\
@@ -49,7 +76,7 @@ class EasyPaperShell(cmd.Cmd):
         \n-f / --force flag: download the file without asking for confirmation if it already exists.\
         \n                   Re-downloads files which already exist in the download folder.\
         \n-s / --skip-existing flag: skip downloading the file if it already exists in the download folder.\
-        \n-ns / --no-session-folders flag: do not create session folders in the download folder.\
+        \n-ns / --no-session-folders flag: do not create session folders (e.g. May-June, Feb-March, etc) in the download folder.\
         \nDo NOT include the file extension."""
         args = safe_shlex_split(arg)
         if args == False:
@@ -72,12 +99,23 @@ class EasyPaperShell(cmd.Cmd):
         force_download = force_download if force_download else not skip_existing if skip_existing else None # If force_download is None, it means that the user did not specify any flags
         download_paper(self, file_name, open_after, force_download, session_folders)
 
-    def help_get(self):
+    def help_get(self) -> None:
         """Manually print the help text for 'get' with color support."""
         print(self.do_get.__doc__.format(YELLOW=YELLOW, RESET=RESET, USAGE=EasyPaperShell.GET_USAGE, PAPER_CODE_EXAMPLE=EasyPaperShell.PAPER_CODE_EXAMPLE))
 
-    def complete_get(self, text, line, begidx, endidx):
-        """Provide tab completion for the 'get' command."""
+    def complete_get(self, text: str, line: str, begidx: int, endidx: int) -> List[str]:
+        """
+        Provide tab completion for the 'get' command.
+
+        Args:
+            text (str): The current word being completed.
+            line (str): The full input line.
+            begidx (int): The beginning index of the completion.
+            endidx (int): The ending index of the completion.
+
+        Returns:
+            List[str]: A list of possible completions.
+        """
         if not text:
             return []
         text = text.lower()
@@ -112,14 +150,14 @@ class EasyPaperShell(cmd.Cmd):
         return subject_code_suggestions
 
 
-    def do_getmany(self, arg):
+    def do_getmany(self, arg: str) -> None:
         """Download all past papers for a given range.\n{USAGE}\
         \n{GET_MANY_EXAMPLE} -o -f{RESET}\
         \nOptional flags:\
         \n-f / --force flag: download the files without asking for confirmation if they already exist.\
         \n                   Re-downloads files which already exist in the download folder.\
         \n-s / --skip-existing flag: skip downloading the files if they already exist in the download folder.\
-        \n-ns / --no-session-folders flag: do not create session folders in the download folder."""
+        \n-ns / --no-session-folders flag: do not create session folders (e.g. May-June, Feb-March, etc) in the download folder."""
         args = safe_shlex_split(arg)
         if args == False:
             return
@@ -272,11 +310,11 @@ class EasyPaperShell(cmd.Cmd):
         if total_downloaded == 0 and total_skipped == 0:
             print_error(f"No past papers could be downloaded for {YELLOW}'{Configuration.subjects[subject_exam][subject_code]}'{RED} in the given session/range", None, None, True)
         
-    def help_getmany(self):
+    def help_getmany(self) -> None:
         """Manually print the help text for 'getmany' with color support."""
         print(self.do_getmany.__doc__.format(YELLOW=YELLOW, RESET=RESET, USAGE=EasyPaperShell.GET_MANY_USAGE, GET_MANY_EXAMPLE = EasyPaperShell.GET_MANY_EXAMPLE))
 
-    def do_setconnecttimeout(self, arg):
+    def do_setconnecttimeout(self, arg: str) -> None:
         """Set the connection timeout in seconds.\n{USAGE}"""
         args = safe_shlex_split(arg)
         if args == False:
@@ -290,11 +328,11 @@ class EasyPaperShell(cmd.Cmd):
         Configuration.store_config(skip_reload=True)  # Skip reloading exam page links and subjects as they are not affected by this change
         print(f"Connection timeout set to {YELLOW}{Configuration.connect_timeout}{RESET} seconds.")
     
-    def help_setconnecttimeout(self):
+    def help_setconnecttimeout(self) -> None:
         """Manually print the help text for 'setconnecttimeout' with color support."""
         print(self.do_setconnecttimeout.__doc__.format(YELLOW=YELLOW, RESET=RESET, USAGE = EasyPaperShell.SET_CONNECT_TIMEOUT_USAGE))
 
-    def do_setreadtimeout(self, arg):
+    def do_setreadtimeout(self, arg: str) -> None:
         """Set the read timeout in seconds.\n{USAGE}"""
         args = safe_shlex_split(arg)
         if args == False:
@@ -308,11 +346,11 @@ class EasyPaperShell(cmd.Cmd):
         Configuration.store_config(skip_reload=True)
         print(f"Read timeout set to {YELLOW}{Configuration.read_timeout}{RESET} seconds.")
 
-    def help_setreadtimeout(self):
+    def help_setreadtimeout(self) -> None:
         """Manually print the help text for 'setreadtimeout' with color support."""
         print(self.do_setreadtimeout.__doc__.format(YELLOW=YELLOW, RESET=RESET, USAGE = EasyPaperShell.SET_READ_TIMEOUT_USAGE))
 
-    def do_setbaseurl(self, arg):
+    def do_setbaseurl(self, arg: str) -> None:
         """Set the base URL for the Easy Past Papers website.\n{USAGE}"""
         args = safe_shlex_split(arg)
         if args == False:
@@ -326,11 +364,11 @@ class EasyPaperShell(cmd.Cmd):
         Configuration.store_config(skip_reload=True)
         print(f"Base URL set to {YELLOW}{Configuration.base_url}{RESET}.")
     
-    def help_setbaseurl(self):
+    def help_setbaseurl(self) -> None:
         """Manually print the help text for 'setbaseurl' with color support."""
         print(self.do_setbaseurl.__doc__.format(YELLOW=YELLOW, RESET=RESET, USAGE = EasyPaperShell.SET_BASE_URL_USAGE))
 
-    def do_setdownloadfolder(self, arg):
+    def do_setdownloadfolder(self, arg: str) -> None:
         """Set the folder for Easy Past Papers to download files to.\n{USAGE}"""
         args = safe_shlex_split(arg)
         if args == False:
@@ -356,18 +394,30 @@ class EasyPaperShell(cmd.Cmd):
         Configuration.store_config(skip_reload=True)
         print(f"Download folder set to {YELLOW}{Configuration.download_folder}{RESET}.")
 
-    def help_setdownloadfolder(self):
+    def help_setdownloadfolder(self) -> None:
         """Manually print the help text for 'setdownloadfolder' with color support."""
         print(self.do_setdownloadfolder.__doc__.format(YELLOW=YELLOW, RESET=RESET, USAGE = EasyPaperShell.SET_DOWNLOAD_FOLDER_USAGE))
 
-    def default(self, line):
+    def default(self, line: str) -> None:
+        """
+        Handle unknown commands.
+
+        Args:
+            line (str): The input line.
+        """
         print_error(f"Unknown command: {YELLOW}'{line}'{RED}")
 
-    def do_exit(self, arg):
+    def do_exit(self, arg: str) -> None:
         """Exit the program."""
         program_exit()
 
-def choose_download_folder():
+def choose_download_folder() -> Optional[str]:
+    """
+    Open a dialog to choose a download folder using Tkinter.
+
+    Returns:
+        Optional[str]: The selected folder path, or None if cancelled.
+    """
     root = tk.Tk()
     try:
         icon = PhotoImage(file="./assets/icon.png")
@@ -391,7 +441,28 @@ def choose_download_folder():
     root.destroy()  # Close the hidden root window
     return folder
 
-def check_args(function_name, expected_length, args, expected_flags=[], mutally_exclusive_flags=[], usage_string=None):
+def check_args(
+    function_name: str,
+    expected_length: int,
+    args: List[str],
+    expected_flags: List[Any] = [],
+    mutally_exclusive_flags: List[Any] = [],
+    usage_string: Optional[str] = None
+) -> bool:
+    """
+    Check command arguments for validity.
+
+    Args:
+        function_name (str): The name of the function/command.
+        expected_length (int): Expected number of non-flag arguments.
+        args (List[str]): The list of arguments.
+        expected_flags (List[Any], optional): List of expected flag tuples.
+        mutally_exclusive_flags (List[Any], optional): List of mutually exclusive flag index tuples.
+        usage_string (Optional[str], optional): Usage string for error messages.
+
+    Returns:
+        bool: True if arguments are valid, False otherwise.
+    """
     arg_count = 0
     invalid_flags = set({})
     expected_flags_unpacked = [element for tuple_item in expected_flags for element in tuple_item]
@@ -432,8 +503,16 @@ def check_args(function_name, expected_length, args, expected_flags=[], mutally_
                 return False
     return True
 
-def safe_shlex_split(arg):
-    """Safely split the argument string using shlex.split, handling exceptions."""
+def safe_shlex_split(arg: str) -> Any:
+    """
+    Safely split the argument string using shlex.split, handling exceptions.
+
+    Args:
+        arg (str): The argument string to split.
+
+    Returns:
+        Any: The list of split arguments, or False if an error occurred.
+    """
     # When unclosed brackets or quotes are present, shlex.split will raise a ValueError, so this function prevents the program from crashing.
     try:
         args = shlex.split(arg)
@@ -442,8 +521,26 @@ def safe_shlex_split(arg):
         print_error("Invalid input", f"\n{e}{RESET}")
         return False
 
-def download_paper(shell, file_name, open_after, force_download, session_folders):
-    """Download a specific past paper based on the file name provided."""
+def download_paper(
+    shell: Any,
+    file_name: str,
+    open_after: bool,
+    force_download: Optional[bool],
+    session_folders: bool
+) -> None:
+    """
+    Download a specific past paper based on the file name provided.
+
+    Args:
+        shell (Any): The shell instance.
+        file_name (str): The file name to download.
+        open_after (bool): Whether to open the file after download.
+        force_download (Optional[bool]): Whether to overwrite files already downloaded.
+        session_folders (bool): Whether to use session folders.
+
+    Returns:
+        None
+    """
     match = PAST_PAPER_PATTERN.search(file_name)
     if not match:
         print_error(f"Invalid file {YELLOW}'{file_name}'{RED} as parameter to get",
@@ -516,7 +613,7 @@ def download_paper(shell, file_name, open_after, force_download, session_folders
                                                 False)
     if content_response != FAILED_TO_DOWNLOAD:
         if open_after:
-            open_file(download_folder + "/"+ file_name + ".pdf")
+            open_file(download_folder + "/" + file_name + ".pdf")
         return
     
     # Get the key for retrieving the html page for the year from the cache.
@@ -554,8 +651,8 @@ def download_paper(shell, file_name, open_after, force_download, session_folders
     content_response = download_with_progress(link_for_year + "/" + found_file_name, 
                                                 Configuration.base_url,
                                                 download_folder,
-                                                file_name,
+                                                found_file_name,
                                                 force_download,
                                                 (Configuration.connect_timeout, Configuration.read_timeout))
     if content_response != FAILED_TO_DOWNLOAD and open_after:
-        open_file(download_folder + "/"+ file_name)
+        open_file(download_folder + "/" + file_name)
